@@ -1,0 +1,10 @@
+# Never upload local secrets - on Vercel these come from
+# Project Settings > Environment Variables.
+.env
+.env.*
+!.env.example
+
+node_modules/
+*.log
+coverage/
+README.md

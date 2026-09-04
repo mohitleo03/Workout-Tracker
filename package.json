@@ -9,10 +9,11 @@
     "dev": "node --watch src/server.js",
     "seed:exercises": "node src/seed/seedExercises.js",
     "seed:foods": "node src/seed/seedFoods.js",
-    "seed": "npm run seed:exercises && npm run seed:foods"
+    "seed": "npm run seed:exercises && npm run seed:foods",
+    "vercel-dev": "vercel dev"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=20.0.0"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

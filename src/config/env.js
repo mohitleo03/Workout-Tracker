@@ -2,12 +2,15 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const required = ['MONGODB_URI', 'JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET'];
-for (const key of required) {
-  if (!process.env[key]) {
-    // eslint-disable-next-line no-console
-    console.error(`[env] Missing required environment variable: ${key}`);
-    process.exit(1);
-  }
+const missing = required.filter((key) => !process.env[key]);
+if (missing.length > 0) {
+  // Throw rather than process.exit: on a serverless platform exiting kills the
+  // worker with an opaque error, whereas a thrown message shows up in the logs.
+  throw new Error(
+    `[env] Missing required environment variable(s): ${missing.join(', ')}. ` +
+      'Locally these come from .env; on Vercel set them under ' +
+      'Project Settings > Environment Variables.'
+  );
 }
 
 /** Normalises "api/v1" / "/api/v1/" into "/api/v1". */
@@ -38,6 +41,15 @@ export const env = {
   },
   corsOrigin: process.env.CORS_ORIGIN || '*',
   isProd: (process.env.NODE_ENV || 'development') === 'production',
+
+  // Vercel sets VERCEL=1 in every deployment and in `vercel dev`.
+  isServerless: Boolean(process.env.VERCEL),
+
+  // Kept short on serverless: the function itself is time-limited, so failing
+  // fast with a clear error beats the platform killing us mid-handshake.
+  dbServerSelectionTimeoutMs: Number(
+    process.env.DB_SERVER_SELECTION_TIMEOUT_MS || (process.env.VERCEL ? 8000 : 20000)
+  ),
 
   // Optional DNS override. Atlas mongodb+srv:// URIs need SRV lookups, which
   // some local resolvers, VPNs and corporate networks refuse. Set e.g.

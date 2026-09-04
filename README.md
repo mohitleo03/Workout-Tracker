@@ -13,8 +13,11 @@ npm start        # production
 ## Layout
 
 ```
+api/
+└── server.js            Vercel serverless entry (connect, then hand to Express)
+vercel.json              catch-all rewrite + function settings
 src/
-├── server.js            boot + graceful shutdown
+├── server.js            local boot + graceful shutdown
 ├── app.js               middleware stack, mounts /api/v1
 ├── config/
 │   ├── env.js           validated environment, fails fast on missing vars
@@ -96,9 +99,111 @@ rather than being copied into the database. Re-run it any time.
 `npm run seed:foods` upserts the starter food catalogue in `seed/foods.data.js` —
 edit that file to add your own staples.
 
+## Deploying to Vercel
+
+The repo is deployment-ready: `api/server.js` is the serverless entry, `vercel.json`
+rewrites every path to it, and `src/server.js` stays as the local equivalent.
+
+### 1. Open Atlas to Vercel — do this first
+
+Vercel functions get **dynamic outbound IPs**, so an allowlist of your home IP will
+reject them and every request will return 503.
+
+> Atlas → **Network Access** → **Add IP Address** → **Allow access from anywhere**
+> (`0.0.0.0/0`) → Confirm.
+
+That is the standard setup for serverless, and it is why a strong database password
+matters — see *Security notes*.
+
+### 2. Set environment variables
+
+Vercel does not read `.env` (it is in `.vercelignore`). Add these under
+**Project Settings → Environment Variables**, for Production *and* Preview:
+
+| Variable | Value |
+|---|---|
+| `MONGODB_URI` | your Atlas SRV string |
+| `JWT_ACCESS_SECRET` | a long random string — **not** the placeholder in `.env` |
+| `JWT_REFRESH_SECRET` | a different long random string |
+| `NODE_ENV` | `production` |
+| `CORS_ORIGIN` | `*`, or your web origin once you have one |
+| `API_PREFIX` | `/api/v1` (optional; this is the default) |
+
+Generate secrets with:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
+```
+
+**Do not set `PORT`, `HOST` or `DNS_SERVERS`.** Vercel manages the first two, and
+`DNS_SERVERS` exists only to work around a local resolver that refuses SRV lookups —
+Vercel's resolver handles them correctly, so setting it there only adds latency and
+a failure mode.
+
+### 3. Deploy
+
+```bash
+# Git integration (recommended): push, then "Add New Project" on vercel.com
+git init && git add . && git commit -m "Workout Tracker API"
+git remote add origin <your-repo-url> && git push -u origin main
+
+# or straight from this folder
+npx vercel --prod
+```
+
+Leave the build settings empty — there is no build step, and `vercel.json` already
+declares the function.
+
+### 4. Check it
+
+```bash
+curl https://<your-project>.vercel.app/                     # {"basePath":"/api/v1",...}
+curl https://<your-project>.vercel.app/api/v1/health        # {"success":true,...}
+```
+
+### 5. Point the app at it
+
+In `Workout-Tracker-Mobile-App/.env`:
+
+```ini
+API_BASE_URL=https://<your-project>.vercel.app/api/v1
+```
+
+Full restart of the app. Since this is HTTPS, the cleartext-HTTP exemptions that only
+apply to debug builds stop mattering — release builds work against it as-is.
+
+### Seeding a deployed database
+
+Vercel gives you no shell, so run the seeds **locally against the same Atlas cluster**:
+
+```bash
+npm run seed     # writes to whatever MONGODB_URI in .env points at
+```
+
+The catalogue lives in the database, not the deployment, so this is a one-off.
+
+### What behaves differently on serverless
+
+- **Cold starts.** The first request after idling pays the Mongo handshake —
+  roughly 3-4s measured locally, then ~3ms while warm. The connection is cached on
+  `globalThis`, so a warm container reuses the open socket rather than re-dialling.
+- **Rate limiting is per-instance.** `express-rate-limit` keeps counters in memory,
+  so the 30-attempts-per-15-minutes login limit applies per function instance, not
+  globally. Fine as a speed bump; move to a shared store if you need a real limit.
+- **`autoIndex` is off in production** (indexes come from the seed run), so cold
+  starts do not spend time reconciling indexes.
+- **No background work.** Anything long-running would need Vercel Cron or a queue;
+  the API has none today.
+- **`maxDuration` is 30s** in `vercel.json`, comfortably above a cold start.
+
 ## Security notes
 
-- `.env` is gitignored but currently contains a real database password in plain text.
-  Rotate it before sharing this repository, and set real JWT secrets.
-- `helmet`, `compression` and a JSON body limit of 2 MB are enabled.
+- `.env` is gitignored and `.vercelignore`d, but it currently contains a real database
+  password in plain text. **Rotate it before this repo goes anywhere**, and replace the
+  placeholder JWT secrets — anyone holding `JWT_ACCESS_SECRET` can mint valid tokens
+  for any user.
+- Opening Atlas to `0.0.0.0/0` (required for Vercel) means the database password is the
+  only thing standing between the internet and your data. Make it long and unique.
+- `helmet`, `compression` and a JSON body limit of 2 MB are enabled; `trust proxy` is
+  set to 1 so client IPs are read correctly behind Vercel's proxy.
 - There is no email verification or password reset yet.
