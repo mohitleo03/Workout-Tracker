@@ -123,6 +123,16 @@ export const startSession = asyncHandler(async (req, res) => {
         targetRepsMax: pe.targetRepsMax,
         targetWeight: pe.targetWeight,
         restSec: pe.restSec,
+        // Per-set plan, so set 3 can prefill its own load rather than set 1's.
+        plannedSets: (pe.sets || []).map((s) => ({
+          setNumber: s.setNumber,
+          setType: s.setType,
+          reps: s.reps,
+          weight: s.weight,
+          drops: (s.drops || []).map((d) => ({ weight: d.weight, reps: d.reps })),
+          durationSec: s.durationSec,
+          restSec: s.restSec,
+        })),
         sets: [],
       });
     }

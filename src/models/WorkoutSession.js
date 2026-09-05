@@ -74,6 +74,24 @@ const sessionExerciseSchema = new mongoose.Schema(
     targetRepsMax: { type: Number, default: null },
     targetWeight: { type: Number, default: null },
     restSec: { type: Number, default: null },
+
+    // Per-set plan for this exercise, snapshotted at start. Lets the workout
+    // screen prefill set 3 with its own weight rather than repeating set 1's.
+    plannedSets: {
+      type: [
+        {
+          _id: false,
+          setNumber: Number,
+          setType: String,
+          reps: { type: Number, default: null },
+          weight: { type: Number, default: null },
+          drops: { type: [{ _id: false, weight: Number, reps: Number }], default: [] },
+          durationSec: { type: Number, default: null },
+          restSec: { type: Number, default: null },
+        },
+      ],
+      default: [],
+    },
   },
   { _id: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }
 );

@@ -2,6 +2,45 @@ import mongoose from 'mongoose';
 
 export const SET_TYPES = ['normal', 'warmup', 'drop', 'superset', 'amrap', 'failure', 'timed'];
 
+/** A planned weight reduction inside a drop set: "then 12.5 for 6". */
+const plannedDropSchema = new mongoose.Schema(
+  { weight: { type: Number, required: true }, reps: { type: Number, default: null, min: 0 } },
+  { _id: false }
+);
+
+/**
+ * One planned set. Sets within an exercise are independent, so a session can
+ * ramp - 10kg x 12, then 12.5 x 12, then 15 x 6 dropping to 12.5 x 6.
+ *
+ * Which fields matter depends on setType:
+ *   normal / warmup  weight + reps
+ *   drop             weight + reps, plus `drops` for each reduction
+ *   failure          weight only; reps are the outcome, so null means "as many
+ *                    as possible" rather than "unset"
+ *   amrap / timed    durationSec is the cap; reps are the outcome
+ */
+const plannedSetSchema = new mongoose.Schema(
+  {
+    setNumber: { type: Number, required: true, min: 1 },
+    setType: { type: String, enum: SET_TYPES, default: 'normal' },
+
+    reps: { type: Number, default: null, min: 0 },
+    weight: { type: Number, default: null },
+
+    drops: { type: [plannedDropSchema], default: [] },
+
+    // Time cap for amrap/timed sets.
+    durationSec: { type: Number, default: null, min: 0 },
+
+    // Rest after this set. Null falls back to the exercise's restSec; a
+    // superset's non-final exercise stores 0, since the pair is one set.
+    restSec: { type: Number, default: null, min: 0 },
+
+    notes: { type: String, default: '' },
+  },
+  { _id: true }
+);
+
 /** One exercise slot inside a planned day. */
 const plannedExerciseSchema = new mongoose.Schema(
   {
@@ -9,9 +48,16 @@ const plannedExerciseSchema = new mongoose.Schema(
     order: { type: Number, default: 0 },
     setType: { type: String, enum: SET_TYPES, default: 'normal' },
 
-    // Exercises sharing a supersetGroup on the same day are performed back to back.
+    // Exercises sharing a supersetGroup on the same day are performed back to
+    // back with no rest between them; the rest belongs to the last one.
     supersetGroup: { type: String, default: null },
 
+    // Per-set targets. Authoritative when present.
+    sets: { type: [plannedSetSchema], default: [] },
+
+    // Legacy aggregate targets, kept so plans written before per-set editing
+    // still open. When `sets` is empty these expand into targetSets identical
+    // sets; anything saved from the app now fills `sets` instead.
     targetSets: { type: Number, default: 3, min: 1, max: 30 },
     targetRepsMin: { type: Number, default: 8, min: 1 },
     targetRepsMax: { type: Number, default: 12, min: 1 },
@@ -21,6 +67,24 @@ const plannedExerciseSchema = new mongoose.Schema(
   },
   { _id: true }
 );
+
+// Keep the aggregates consistent with the per-set list, so older clients and
+// the plan summary line stay correct without special-casing.
+plannedExerciseSchema.pre('validate', function syncAggregates(next) {
+  if (this.sets && this.sets.length > 0) {
+    this.targetSets = this.sets.length;
+
+    const reps = this.sets.map((s) => s.reps).filter((r) => typeof r === 'number' && r > 0);
+    if (reps.length > 0) {
+      this.targetRepsMin = Math.min(...reps);
+      this.targetRepsMax = Math.max(...reps);
+    }
+
+    const weights = this.sets.map((s) => s.weight).filter((w) => typeof w === 'number');
+    this.targetWeight = weights.length > 0 ? Math.max(...weights) : null;
+  }
+  next();
+});
 
 /** One day of the weekly split. dayOfWeek: 0 = Sunday ... 6 = Saturday. */
 const planDaySchema = new mongoose.Schema(

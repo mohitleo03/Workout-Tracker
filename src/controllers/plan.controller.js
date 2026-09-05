@@ -6,11 +6,29 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 
 const objectId = z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid id');
 
+const plannedDrop = z.object({
+  weight: z.number(),
+  reps: z.number().int().min(0).nullable().optional(),
+});
+
+const plannedSet = z.object({
+  setNumber: z.number().int().min(1),
+  setType: z.enum(SET_TYPES).default('normal'),
+  // Null is meaningful: "as many as possible" for failure and amrap sets.
+  reps: z.number().int().min(0).nullable().optional(),
+  weight: z.number().nullable().optional(),
+  drops: z.array(plannedDrop).default([]),
+  durationSec: z.number().int().min(0).max(7200).nullable().optional(),
+  restSec: z.number().int().min(0).max(1800).nullable().optional(),
+  notes: z.string().max(300).default(''),
+});
+
 const plannedExercise = z.object({
   exercise: objectId,
   order: z.number().int().min(0).default(0),
   setType: z.enum(SET_TYPES).default('normal'),
   supersetGroup: z.string().nullable().optional(),
+  sets: z.array(plannedSet).max(30).default([]),
   targetSets: z.number().int().min(1).max(30).default(3),
   targetRepsMin: z.number().int().min(1).default(8),
   targetRepsMax: z.number().int().min(1).default(12),
