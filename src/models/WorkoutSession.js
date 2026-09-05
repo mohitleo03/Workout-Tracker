@@ -28,7 +28,6 @@ const setSchema = new mongoose.Schema(
     forceDropSet: { type: Boolean, default: false },
     drops: { type: [dropSchema], default: [] },
 
-    rpe: { type: Number, min: 1, max: 10, default: null },
     // How long the set itself took.
     durationSec: { type: Number, default: 0 },
     // Rest taken after this set, before the next one.

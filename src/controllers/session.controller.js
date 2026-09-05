@@ -23,7 +23,6 @@ export const setInputSchema = z.object({
   isWarmup: z.boolean().default(false),
   forceDropSet: z.boolean().default(false),
   drops: z.array(dropSchema).default([]),
-  rpe: z.number().min(1).max(10).nullable().optional(),
   durationSec: z.number().int().min(0).default(0),
   restSec: z.number().int().min(0).default(0),
   completed: z.boolean().default(true),

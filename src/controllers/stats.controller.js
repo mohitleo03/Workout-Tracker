@@ -192,7 +192,6 @@ export const getExerciseProgress = asyncHandler(async (req, res) => {
           drops: set.drops,
           durationSec: set.durationSec,
           restSec: set.restSec,
-          rpe: set.rpe,
         })),
       };
     })
