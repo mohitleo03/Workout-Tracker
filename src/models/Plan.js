@@ -2,6 +2,13 @@ import mongoose from 'mongoose';
 
 export const SET_TYPES = ['normal', 'warmup', 'drop', 'superset', 'amrap', 'failure', 'timed'];
 
+/**
+ * What kind of work an exercise is, so a day can be ordered the way it is
+ * actually performed: warm up, lift, then cardio at the end (or cardio first).
+ * Cardio and warm-up work is usually timed rather than counted in reps.
+ */
+export const EXERCISE_KINDS = ['warmup', 'strength', 'cardio'];
+
 /** A planned weight reduction inside a drop set: "then 12.5 for 6". */
 const plannedDropSchema = new mongoose.Schema(
   { weight: { type: Number, required: true }, reps: { type: Number, default: null, min: 0 } },
@@ -47,6 +54,7 @@ const plannedExerciseSchema = new mongoose.Schema(
     exercise: { type: mongoose.Schema.Types.ObjectId, ref: 'Exercise', required: true },
     order: { type: Number, default: 0 },
     setType: { type: String, enum: SET_TYPES, default: 'normal' },
+    kind: { type: String, enum: EXERCISE_KINDS, default: 'strength' },
 
     // Exercises sharing a supersetGroup on the same day are performed back to
     // back with no rest between them; the rest belongs to the last one.

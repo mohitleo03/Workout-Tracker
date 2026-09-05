@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { WorkoutSession } from '../models/WorkoutSession.js';
-import { Plan, SET_TYPES } from '../models/Plan.js';
+import { Plan, SET_TYPES, EXERCISE_KINDS } from '../models/Plan.js';
 import { Exercise } from '../models/Exercise.js';
 import { ApiError } from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
@@ -44,6 +44,7 @@ export const addEntrySchema = z.object({
   exercise: objectId,
   order: z.number().int().min(0).optional(),
   setType: z.enum(SET_TYPES).default('normal'),
+  kind: z.enum(EXERCISE_KINDS).default('strength'),
   supersetGroup: z.string().nullable().optional(),
   notes: z.string().max(500).default(''),
   sets: z.array(setInputSchema).default([]),
@@ -114,6 +115,7 @@ export const startSession = asyncHandler(async (req, res) => {
         exerciseName: nameById.get(String(pe.exercise)) || '',
         order: i,
         setType: pe.setType,
+        kind: pe.kind,
         supersetGroup: pe.supersetGroup,
         notes: pe.notes,
         // Snapshot the targets; the actual sets are logged live.

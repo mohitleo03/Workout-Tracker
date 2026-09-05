@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Plan, SET_TYPES } from '../models/Plan.js';
+import { Plan, SET_TYPES, EXERCISE_KINDS } from '../models/Plan.js';
 import { Exercise } from '../models/Exercise.js';
 import { ApiError } from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
@@ -27,6 +27,7 @@ const plannedExercise = z.object({
   exercise: objectId,
   order: z.number().int().min(0).default(0),
   setType: z.enum(SET_TYPES).default('normal'),
+  kind: z.enum(EXERCISE_KINDS).default('strength'),
   supersetGroup: z.string().nullable().optional(),
   sets: z.array(plannedSet).max(30).default([]),
   targetSets: z.number().int().min(1).max(30).default(3),

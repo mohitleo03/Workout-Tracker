@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { SET_TYPES } from './Plan.js';
+import { SET_TYPES, EXERCISE_KINDS } from './Plan.js';
 
 /**
  * A weight drop inside a single working set.
@@ -61,6 +61,7 @@ const sessionExerciseSchema = new mongoose.Schema(
     exerciseName: { type: String, default: '' }, // denormalised for fast history reads
     order: { type: Number, default: 0 },
     setType: { type: String, enum: SET_TYPES, default: 'normal' },
+    kind: { type: String, enum: EXERCISE_KINDS, default: 'strength' },
     supersetGroup: { type: String, default: null },
     sets: { type: [setSchema], default: [] },
     notes: { type: String, default: '' },
