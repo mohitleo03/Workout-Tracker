@@ -15,6 +15,10 @@ router.get('/:id', c.getSession);
 router.delete('/:id', c.deleteSession);
 router.post('/:id/finish', validate(c.finishSessionSchema), c.finishSession);
 
+// The warm-up is one block, not a tap per drill.
+router.post('/:id/warmup/start', c.startWarmup);
+router.post('/:id/warmup/complete', validate(c.completeWarmupSchema), c.completeWarmup);
+
 router.post('/:id/entries', validate(c.addEntrySchema), c.addEntry);
 router.patch('/:id/entries/:entryId', c.updateEntry);
 router.delete('/:id/entries/:entryId', c.removeEntry);

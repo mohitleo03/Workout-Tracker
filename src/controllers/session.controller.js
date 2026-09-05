@@ -63,6 +63,12 @@ export const finishSessionSchema = z.object({
   status: z.enum(['completed', 'abandoned']).default('completed'),
 });
 
+export const completeWarmupSchema = z.object({
+  // Only used when the block was never formally started - normally the server
+  // measures the elapsed time itself from warmupStartedAt.
+  durationSec: z.number().int().min(0).max(7200).optional(),
+});
+
 export const listQuerySchema = z.object({
   from: z.coerce.date().optional(),
   to: z.coerce.date().optional(),
@@ -312,9 +318,110 @@ export const recordRest = asyncHandler(async (req, res) => {
   res.json({ success: true, data: { setId: set._id, restSec: set.restSec } });
 });
 
+/**
+ * The sets a warm-up drill should be credited with when the block finishes.
+ *
+ * The plan is the record: "20 of these, 10 of those" was declared up front,
+ * which is the whole reason the block needs no per-drill tapping.
+ */
+function plannedSetsForEntry(entry) {
+  if (entry.plannedSets && entry.plannedSets.length > 0) {
+    return entry.plannedSets
+      .slice()
+      .sort((a, b) => a.setNumber - b.setNumber)
+      .map((s, i) => ({
+        setNumber: i + 1,
+        setType: s.setType || 'normal',
+        reps: s.reps ?? 0,
+        weight: s.weight ?? 0,
+        durationSec: s.durationSec ?? 0,
+      }));
+  }
+
+  // Plans written before per-set editing only carry aggregates.
+  const count = Math.max(1, entry.targetSets || 1);
+  return Array.from({ length: count }, (_, i) => ({
+    setNumber: i + 1,
+    setType: 'normal',
+    reps: entry.targetRepsMin ?? 0,
+    weight: entry.targetWeight ?? 0,
+    durationSec: 0,
+  }));
+}
+
+/** Marks the start of the warm-up block. Re-tapping does not restart it. */
+export const startWarmup = asyncHandler(async (req, res) => {
+  const session = await loadOwnedSession(req.params.id, req.userId);
+  if (session.status !== 'in_progress') throw ApiError.badRequest('Session is already closed');
+
+  if (!session.entries.some((e) => e.kind === 'warmup')) {
+    throw ApiError.badRequest('This workout has no warm-up exercises.');
+  }
+
+  // Keeping the original start means a double tap costs no elapsed time.
+  if (!session.warmupStartedAt) {
+    session.warmupStartedAt = new Date();
+    await session.save();
+  }
+
+  res.json({ success: true, data: session });
+});
+
+/**
+ * Closes the warm-up block: every warm-up drill is credited with the sets its
+ * plan declared, in one round trip, and the block's elapsed time is stored.
+ *
+ * Idempotent - a retry after a timeout finds the drills already logged and
+ * returns the session rather than doubling them up.
+ */
+export const completeWarmup = asyncHandler(async (req, res) => {
+  const session = await loadOwnedSession(req.params.id, req.userId);
+  if (session.status !== 'in_progress') throw ApiError.badRequest('Session is already closed');
+
+  const warmups = session.entries.filter((e) => e.kind === 'warmup');
+  if (warmups.length === 0) throw ApiError.badRequest('This workout has no warm-up exercises.');
+
+  const startedAt = session.warmupStartedAt;
+  const elapsed = startedAt
+    ? Math.max(0, Math.round((Date.now() - startedAt.getTime()) / 1000))
+    : req.body.durationSec ?? 0;
+
+  for (const entry of warmups) {
+    if (entry.sets.length > 0) continue; // already credited
+    entry.sets = plannedSetsForEntry(entry).map((s) => ({
+      ...s,
+      isWarmup: true,
+      completed: true,
+      completedAt: new Date(),
+      restSec: 0,
+    }));
+  }
+
+  // A retry keeps the first measurement rather than restarting the clock.
+  if (!session.warmupSec) session.warmupSec = elapsed;
+  session.warmupStartedAt = null;
+  await session.save();
+
+  const populated = await session.populate(
+    'entries.exercise',
+    'name images primaryMuscles equipment'
+  );
+  res.json({ success: true, data: populated });
+});
+
 export const finishSession = asyncHandler(async (req, res) => {
   const session = await loadOwnedSession(req.params.id, req.userId);
   if (session.status !== 'in_progress') throw ApiError.badRequest('Session is already closed');
+
+  // A warm-up left running when the workout ends still gets its elapsed time,
+  // rather than the block silently reading as zero.
+  if (session.warmupStartedAt && !session.warmupSec) {
+    session.warmupSec = Math.max(
+      0,
+      Math.round((Date.now() - session.warmupStartedAt.getTime()) / 1000)
+    );
+  }
+  session.warmupStartedAt = null;
 
   session.endedAt = req.body.endedAt || new Date();
   session.status = req.body.status;

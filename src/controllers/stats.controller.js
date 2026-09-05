@@ -115,7 +115,9 @@ export const getMuscleSplit = asyncHandler(async (req, res) => {
     { $unwind: '$ex' },
     { $unwind: '$ex.primaryMuscles' },
     { $unwind: '$entries.sets' },
-    { $match: { 'entries.sets.completed': true } },
+    // Warm-up work is excluded here as it is from volume and PRs: a block of
+    // arm circles should not read as shoulder training in the split.
+    { $match: { 'entries.sets.completed': true, 'entries.sets.isWarmup': false } },
     {
       $group: {
         _id: '$ex.primaryMuscles',

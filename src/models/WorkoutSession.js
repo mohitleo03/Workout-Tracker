@@ -119,6 +119,13 @@ const workoutSessionSchema = new mongoose.Schema(
     workDurationSec: { type: Number, default: 0 },
     restDurationSec: { type: Number, default: 0 },
 
+    // The warm-up is performed as one block - one tap to start it, one when
+    // the whole thing is done - rather than a tap per drill. warmupStartedAt
+    // lives on the server so the elapsed time survives the app being killed
+    // mid-warm-up, and so a phone with a wrong clock cannot skew it.
+    warmupStartedAt: { type: Date, default: null },
+    warmupSec: { type: Number, default: 0, min: 0 },
+
     status: {
       type: String,
       enum: ['in_progress', 'completed', 'abandoned'],
@@ -149,6 +156,11 @@ workoutSessionSchema.methods.recalculate = function recalculate() {
   let rest = 0;
 
   for (const entry of this.entries) {
+    // Warm-up work is recorded but kept out of the roll-ups: six mobility
+    // drills should not report as six of the day's sets, and the block's real
+    // elapsed time is held in warmupSec rather than summed from the drills.
+    if (entry.kind === 'warmup') continue;
+
     for (const set of entry.sets) {
       if (!set.completed) continue;
       sets += 1;
