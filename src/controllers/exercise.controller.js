@@ -47,7 +47,22 @@ export const searchExercises = asyncHandler(async (req, res) => {
     filter.$and.push({ $or: [{ searchName: rx }, { aliases: rx }] });
   }
   if (muscle) {
-    filter.$and.push({ $or: [{ primaryMuscles: muscle }, { secondaryMuscles: muscle }] });
+    // Accepts a comma-separated list, so the app can expand a broad group like
+    // "back" into the catalog's fine-grained muscles (lats, middle back,
+    // traps, lower back). A single value still works as before.
+    const muscles = muscle
+      .split(',')
+      .map((m) => m.trim())
+      .filter(Boolean);
+
+    if (muscles.length > 0) {
+      filter.$and.push({
+        $or: [
+          { primaryMuscles: { $in: muscles } },
+          { secondaryMuscles: { $in: muscles } },
+        ],
+      });
+    }
   }
   if (equipment) filter.$and.push({ equipment });
   if (category) filter.$and.push({ category });
