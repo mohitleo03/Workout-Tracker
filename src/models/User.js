@@ -31,6 +31,8 @@ const userSchema = new mongoose.Schema(
       dailyCarbsTarget: { type: Number, default: null },
       dailyFatTarget: { type: Number, default: null },
       mealRemindersEnabled: { type: Boolean, default: true },
+      // "HH:mm" in the user's own local time. Null until they tell us.
+      usualTrainingTime: { type: String, default: null },
     },
   },
   { timestamps: true }

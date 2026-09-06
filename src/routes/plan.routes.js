@@ -14,6 +14,7 @@ router.get('/:id', c.getPlan);
 router.patch('/:id', validate(c.updatePlanSchema), c.updatePlan);
 router.post('/:id/activate', c.activatePlan);
 router.put('/:id/days', validate(c.upsertDaySchema), c.upsertDay);
+router.delete('/:id/days/:dayOfWeek/:sequence', c.deleteDay);
 router.delete('/:id', c.deletePlan);
 
 export default router;

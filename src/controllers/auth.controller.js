@@ -37,6 +37,11 @@ export const updateMeSchema = z.object({
       dailyCarbsTarget: z.number().positive().nullable().optional(),
       dailyFatTarget: z.number().positive().nullable().optional(),
       mealRemindersEnabled: z.boolean().optional(),
+      usualTrainingTime: z
+        .string()
+        .regex(/^([01][0-9]|2[0-3]):[0-5][0-9]$/, 'Use HH:mm')
+        .nullable()
+        .optional(),
     })
     .optional(),
 });

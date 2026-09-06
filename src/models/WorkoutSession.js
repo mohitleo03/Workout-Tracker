@@ -110,6 +110,10 @@ const workoutSessionSchema = new mongoose.Schema(
     muscleGroups: { type: [String], default: [] },
 
     date: { type: Date, required: true, index: true }, // UTC start of day
+
+    // Which workout of the day this is. Almost always 1 - training twice in a
+    // day is the exception, and is only reachable by asking for it explicitly.
+    sequence: { type: Number, default: 1, min: 1 },
     startedAt: { type: Date, default: Date.now },
     endedAt: { type: Date, default: null },
 

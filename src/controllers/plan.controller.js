@@ -40,6 +40,7 @@ const plannedExercise = z.object({
 
 const planDay = z.object({
   dayOfWeek: z.number().int().min(0).max(6),
+  sequence: z.number().int().min(1).max(4).default(1),
   label: z.string().max(60).default(''),
   muscleGroups: z.array(z.string()).default([]),
   isRestDay: z.boolean().default(false),
@@ -91,10 +92,21 @@ export const getPlanForDay = asyncHandler(async (req, res) => {
 
   if (!plan) return res.json({ success: true, data: null });
 
-  const day = plan.days.find((d) => d.dayOfWeek === dow) || null;
+  const forDay = plan.days
+    .filter((d) => d.dayOfWeek === dow)
+    .sort((a, b) => (a.sequence || 1) - (b.sequence || 1));
+
   res.json({
     success: true,
-    data: { planId: plan._id, planName: plan.name, dayOfWeek: dow, day },
+    data: {
+      planId: plan._id,
+      planName: plan.name,
+      dayOfWeek: dow,
+      // `day` stays the first workout so older clients keep working; `days`
+      // carries the second one when there is one.
+      day: forDay[0] || null,
+      days: forDay,
+    },
   });
 });
 
@@ -154,13 +166,44 @@ export const upsertDay = asyncHandler(async (req, res) => {
 
   await assertExercisesVisible(req.userId, [req.body]);
 
-  const idx = plan.days.findIndex((d) => d.dayOfWeek === req.body.dayOfWeek);
+  const seq = req.body.sequence || 1;
+  const idx = plan.days.findIndex(
+    (d) => d.dayOfWeek === req.body.dayOfWeek && (d.sequence || 1) === seq
+  );
   if (idx >= 0) {
     plan.days[idx].set(req.body);
   } else {
     plan.days.push(req.body);
   }
-  plan.days.sort((a, b) => a.dayOfWeek - b.dayOfWeek);
+  plan.days.sort(
+    (a, b) => a.dayOfWeek - b.dayOfWeek || (a.sequence || 1) - (b.sequence || 1)
+  );
+  await plan.save();
+
+  const populated = await plan.populate(
+    'days.exercises.exercise',
+    'name images primaryMuscles equipment'
+  );
+  res.json({ success: true, data: populated });
+});
+
+export const deleteDay = asyncHandler(async (req, res) => {
+  const plan = await Plan.findOne({ _id: req.params.id, owner: req.userId });
+  if (!plan) throw ApiError.notFound('Plan not found');
+
+  const dow = Number(req.params.dayOfWeek);
+  const seq = Number(req.params.sequence);
+  if (Number.isNaN(dow) || dow < 0 || dow > 6) {
+    throw ApiError.badRequest('dayOfWeek must be 0-6');
+  }
+  if (Number.isNaN(seq) || seq < 1) throw ApiError.badRequest('sequence must be 1 or more');
+
+  const idx = plan.days.findIndex(
+    (d) => d.dayOfWeek === dow && (d.sequence || 1) === seq
+  );
+  if (idx < 0) throw ApiError.notFound('That day is not in this plan');
+
+  plan.days.splice(idx, 1);
   await plan.save();
 
   const populated = await plan.populate(

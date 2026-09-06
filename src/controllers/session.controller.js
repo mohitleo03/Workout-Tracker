@@ -38,6 +38,9 @@ export const startSessionSchema = z.object({
   date: z.coerce.date().optional(),
   // When true, prefill entries from the matching plan day.
   fromPlan: z.boolean().default(true),
+  // Deliberate opt-in to training twice in one day. Without it a second
+  // workout is refused, which is what keeps the common case simple.
+  secondWorkout: z.boolean().default(false),
 });
 
 export const addEntrySchema = z.object({
@@ -85,7 +88,7 @@ async function loadOwnedSession(sessionId, userId) {
 
 /** Start a session, optionally prefilled from the active plan's day. */
 export const startSession = asyncHandler(async (req, res) => {
-  const { planId, planDayId, dayOfWeek, title, date, fromPlan } = req.body;
+  const { planId, planDayId, dayOfWeek, title, date, fromPlan, secondWorkout } = req.body;
 
   const existing = await WorkoutSession.findOne({ owner: req.userId, status: 'in_progress' });
   if (existing) {
@@ -93,6 +96,25 @@ export const startSession = asyncHandler(async (req, res) => {
       'You already have a workout in progress. Finish or discard it before starting another.'
     );
   }
+
+  // One workout a day is the norm: nobody trains chest twice on a Tuesday.
+  // Enforced here rather than only in the app so a stale screen, a retried
+  // request or a second device cannot quietly open a duplicate.
+  const dayOf = dayStart(date || new Date());
+  const doneToday = await WorkoutSession.countDocuments({
+    owner: req.userId,
+    date: dayOf,
+    status: 'completed',
+  });
+
+  if (doneToday > 0 && !secondWorkout) {
+    throw ApiError.conflict(
+      'You have already finished a workout today. Start a second workout of the day if you really are training again.'
+    );
+  }
+
+  // Abandoned attempts do not get a number - only real workouts count.
+  const sequence = doneToday + 1;
 
   const plan = planId
     ? await Plan.findOne({ _id: planId, owner: req.userId })
@@ -103,9 +125,14 @@ export const startSession = asyncHandler(async (req, res) => {
 
   let day = null;
   if (plan) {
+    // The second workout of a day follows its own plan, not the first one's.
+    // Without a plan for this sequence the session starts empty rather than
+    // repeating the muscles already trained a few hours ago.
     day = planDayId
       ? plan.days.id(planDayId)
-      : plan.days.find((d) => d.dayOfWeek === dow) || null;
+      : plan.days.find(
+          (d) => d.dayOfWeek === dow && (d.sequence || 1) === sequence
+        ) || null;
   }
 
   const entries = [];
@@ -149,9 +176,17 @@ export const startSession = asyncHandler(async (req, res) => {
     owner: req.userId,
     plan: plan?._id || null,
     planDayId: day?._id || null,
-    title: title || day?.label || 'Workout',
+    // A second workout says so in its own name, so history is readable.
+    title:
+      title ||
+      (sequence > 1
+        ? day?.label
+          ? `${day.label} (${sequence})`
+          : `Workout ${sequence}`
+        : day?.label || 'Workout'),
+    sequence,
     muscleGroups: day?.muscleGroups || [],
-    date: dayStart(date || now),
+    date: dayOf,
     startedAt: now,
     status: 'in_progress',
     entries,

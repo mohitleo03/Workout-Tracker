@@ -98,6 +98,10 @@ plannedExerciseSchema.pre('validate', function syncAggregates(next) {
 const planDaySchema = new mongoose.Schema(
   {
     dayOfWeek: { type: Number, required: true, min: 0, max: 6 },
+
+    // Which workout of that day this plans. A day normally has one; a second
+    // is for people who genuinely train twice, and trains different muscles.
+    sequence: { type: Number, default: 1, min: 1, max: 4 },
     label: { type: String, default: '' }, // e.g. "Push A"
     muscleGroups: { type: [String], default: [] }, // e.g. ["chest", "biceps"]
     isRestDay: { type: Boolean, default: false },
