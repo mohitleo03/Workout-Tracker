@@ -1,10 +1,10 @@
 import { Router } from 'express';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireActiveAccount } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import * as c from '../controllers/plan.controller.js';
 
 const router = Router();
-router.use(requireAuth);
+router.use(requireAuth, requireActiveAccount);
 
 router.get('/', c.listPlans);
 router.get('/active', c.getActivePlan);

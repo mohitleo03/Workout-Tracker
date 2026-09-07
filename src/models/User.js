@@ -23,6 +23,14 @@ const userSchema = new mongoose.Schema(
       birthDate: { type: Date, default: null },
       gender: { type: String, enum: ['male', 'female', 'other', null], default: null },
     },
+    // Accounts are approved by hand: a new sign-up can log in and see its
+    // own status, but nothing else, until this is turned on.
+    isActive: { type: Boolean, default: false, index: true },
+    activatedAt: { type: Date, default: null },
+
+    // Access runs out on this date. Set to 30 days from sign-up.
+    subscriptionExpiresAt: { type: Date, default: null, index: true },
+
     preferences: {
       weightUnit: { type: String, enum: ['kg', 'lb'], default: 'kg' },
       restTimerDefaultSec: { type: Number, default: 90 },
@@ -44,6 +52,18 @@ const userSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+/**
+ * Why the account can or cannot be used: 'active', 'pending' (never approved)
+ * or 'expired'. One field the app can branch on beats it re-deriving the rule.
+ */
+userSchema.virtual('accessState').get(function accessState() {
+  if (!this.isActive) return 'pending';
+  if (this.subscriptionExpiresAt && this.subscriptionExpiresAt.getTime() < Date.now()) {
+    return 'expired';
+  }
+  return 'active';
+});
+
 userSchema.methods.setPassword = async function setPassword(plain) {
   this.passwordHash = await bcrypt.hash(plain, 12);
 };
@@ -59,6 +79,9 @@ userSchema.methods.toPublic = function toPublic() {
     name: this.name,
     profile: this.profile,
     preferences: this.preferences,
+    isActive: this.isActive,
+    subscriptionExpiresAt: this.subscriptionExpiresAt,
+    accessState: this.accessState,
     createdAt: this.createdAt,
   };
 };

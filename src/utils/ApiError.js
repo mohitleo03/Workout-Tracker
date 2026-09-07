@@ -6,8 +6,11 @@ export class ApiError extends Error {
     this.expose = true;
   }
   static badRequest(msg = 'Bad request', details) { return new ApiError(400, msg, details); }
-  static unauthorized(msg = 'Unauthorized') { return new ApiError(401, msg); }
-  static forbidden(msg = 'Forbidden') { return new ApiError(403, msg); }
-  static notFound(msg = 'Not found') { return new ApiError(404, msg); }
-  static conflict(msg = 'Conflict') { return new ApiError(409, msg); }
+  // All of these take details, not just badRequest: a caller that wants to
+  // give the client something to branch on should not have its second
+  // argument silently dropped.
+  static unauthorized(msg = 'Unauthorized', details) { return new ApiError(401, msg, details); }
+  static forbidden(msg = 'Forbidden', details) { return new ApiError(403, msg, details); }
+  static notFound(msg = 'Not found', details) { return new ApiError(404, msg, details); }
+  static conflict(msg = 'Conflict', details) { return new ApiError(409, msg, details); }
 }

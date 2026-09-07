@@ -42,6 +42,16 @@ export const env = {
   corsOrigin: process.env.CORS_ORIGIN || '*',
   isProd: (process.env.NODE_ENV || 'development') === 'production',
 
+  // How long a new account gets, in days.
+  trialDays: Number(process.env.TRIAL_DAYS) || 30,
+
+  // Whether a new account is usable immediately. Off in production, where
+  // accounts are approved by hand; on elsewhere so local work and the test
+  // suites are not blocked behind that.
+  autoActivateUsers: process.env.AUTO_ACTIVATE_USERS
+    ? process.env.AUTO_ACTIVATE_USERS === 'true'
+    : (process.env.NODE_ENV || 'development') !== 'production',
+
   // Vercel sets VERCEL=1 in every deployment and in `vercel dev`.
   isServerless: Boolean(process.env.VERCEL),
 

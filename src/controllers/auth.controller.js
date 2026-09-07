@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { User } from '../models/User.js';
+import { env } from '../config/env.js';
 import { WorkoutSession } from '../models/WorkoutSession.js';
 import { Plan } from '../models/Plan.js';
 import { Goal } from '../models/Goal.js';
@@ -85,7 +86,16 @@ export const register = asyncHandler(async (req, res) => {
   const existing = await User.findOne({ email: email.toLowerCase() });
   if (existing) throw ApiError.conflict('An account with that email already exists');
 
-  const user = new User({ email: email.toLowerCase(), name: name || '' });
+  const user = new User({
+    email: email.toLowerCase(),
+    name: name || '',
+    // Access runs for a month from sign-up.
+    subscriptionExpiresAt: new Date(Date.now() + env.trialDays * 24 * 60 * 60 * 1000),
+    // Approved by hand in production. Locally, and in the test suites, waiting
+    // on a manual step would block everything, so it is opt-out by config.
+    isActive: env.autoActivateUsers,
+    activatedAt: env.autoActivateUsers ? new Date() : null,
+  });
   await user.setPassword(password);
   await user.save();
 

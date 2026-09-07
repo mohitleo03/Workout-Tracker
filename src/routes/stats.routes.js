@@ -1,9 +1,9 @@
 import { Router } from 'express';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireActiveAccount } from '../middleware/auth.js';
 import * as c from '../controllers/stats.controller.js';
 
 const router = Router();
-router.use(requireAuth);
+router.use(requireAuth, requireActiveAccount);
 
 router.get('/overview', c.getOverview);
 router.get('/volume', c.getVolumeTrend);

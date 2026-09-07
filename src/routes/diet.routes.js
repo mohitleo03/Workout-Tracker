@@ -1,10 +1,10 @@
 import { Router } from 'express';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireActiveAccount } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import * as c from '../controllers/diet.controller.js';
 
 const router = Router();
-router.use(requireAuth);
+router.use(requireAuth, requireActiveAccount);
 
 router.get('/plan', c.getDietPlan);
 router.put('/plan', validate(c.upsertDietPlanSchema), c.upsertDietPlan);
