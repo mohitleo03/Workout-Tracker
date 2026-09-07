@@ -1,5 +1,7 @@
+import mongoose from 'mongoose';
 import { z } from 'zod';
 import { Food } from '../models/Food.js';
+import { DietLog } from '../models/DietLog.js';
 import { ApiError } from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
@@ -27,6 +29,56 @@ export const createFoodSchema = z.object({
 });
 
 export const updateFoodSchema = createFoodSchema.partial();
+
+/**
+ * The foods this user logs most, most recently first among equals.
+ *
+ * Meals vary day to day but their components do not - chapati, rice, dal and
+ * cucumber turn up in most of them. Surfacing those saves typing a search for
+ * every single item.
+ */
+export const getRecentFoods = asyncHandler(async (req, res) => {
+  const limit = Math.min(Number(req.query.limit) || 20, 50);
+  const owner = new mongoose.Types.ObjectId(req.userId);
+
+  const rows = await DietLog.aggregate([
+    { $match: { owner } },
+    { $unwind: '$items' },
+    { $match: { 'items.food': { $ne: null } } },
+    {
+      $group: {
+        _id: '$items.food',
+        timesLogged: { $sum: 1 },
+        lastLogged: { $max: '$date' },
+        lastQuantity: { $last: '$items.quantity' },
+      },
+    },
+    { $sort: { timesLogged: -1, lastLogged: -1 } },
+    { $limit: limit },
+    {
+      $lookup: { from: 'foods', localField: '_id', foreignField: '_id', as: 'food' },
+    },
+    { $unwind: '$food' },
+    // A food deleted since, or one belonging to somebody else, is not offered.
+    {
+      $match: {
+        $or: [{ 'food.owner': null }, { 'food.owner': owner }],
+      },
+    },
+    {
+      $replaceRoot: {
+        newRoot: {
+          $mergeObjects: [
+            '$food',
+            { timesLogged: '$timesLogged', lastLogged: '$lastLogged', lastQuantity: '$lastQuantity' },
+          ],
+        },
+      },
+    },
+  ]);
+
+  res.json({ success: true, data: rows });
+});
 
 export const searchFoods = asyncHandler(async (req, res) => {
   const { q, category, mine, page, limit } = req.validatedQuery;

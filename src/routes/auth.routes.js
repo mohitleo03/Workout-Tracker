@@ -22,5 +22,6 @@ router.post('/refresh', validate(c.refreshSchema), c.refresh);
 router.get('/me', requireAuth, c.me);
 router.patch('/me', requireAuth, validate(c.updateMeSchema), c.updateMe);
 router.post('/change-password', requireAuth, validate(c.changePasswordSchema), c.changePassword);
+router.delete('/me', requireAuth, validate(c.deleteAccountSchema), c.deleteAccount);
 
 export default router;

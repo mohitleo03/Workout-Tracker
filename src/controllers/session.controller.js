@@ -403,6 +403,27 @@ export const startWarmup = asyncHandler(async (req, res) => {
 });
 
 /**
+ * Stops a warm-up block without crediting it.
+ *
+ * The block starts on its own when a workout opens, so there has to be a way
+ * out that is not "finish" - otherwise tapping into a workout logs a warm-up
+ * you never did.
+ */
+export const cancelWarmup = asyncHandler(async (req, res) => {
+  const session = await loadOwnedSession(req.params.id, req.userId);
+  if (session.status !== 'in_progress') throw ApiError.badRequest('Session is already closed');
+
+  session.warmupStartedAt = null;
+  await session.save();
+
+  const populated = await session.populate(
+    'entries.exercise',
+    'name images primaryMuscles equipment'
+  );
+  res.json({ success: true, data: populated });
+});
+
+/**
  * Closes the warm-up block: every warm-up drill is credited with the sets its
  * plan declared, in one round trip, and the block's elapsed time is stored.
  *

@@ -11,6 +11,7 @@ router.put('/plan', validate(c.upsertDietPlanSchema), c.upsertDietPlan);
 
 router.get('/log', validate(c.dayQuerySchema, 'query'), c.getDayLog);
 router.post('/log/items', validate(c.logItemSchema), c.addLogItem);
+router.post('/log/items/bulk', validate(c.bulkLogItemsSchema), c.addLogItems);
 router.patch('/log/:logId/items/:itemId', c.updateLogItem);
 router.post('/log/:logId/items/:itemId/toggle', c.toggleLogItem);
 router.delete('/log/:logId/items/:itemId', c.deleteLogItem);

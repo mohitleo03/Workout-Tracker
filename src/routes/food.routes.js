@@ -6,6 +6,7 @@ import * as c from '../controllers/food.controller.js';
 const router = Router();
 router.use(requireAuth);
 
+router.get('/recent', c.getRecentFoods);
 router.get('/', validate(c.searchFoodQuerySchema, 'query'), c.searchFoods);
 router.post('/', validate(c.createFoodSchema), c.createFood);
 router.patch('/:id', validate(c.updateFoodSchema), c.updateFood);

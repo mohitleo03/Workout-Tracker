@@ -1,5 +1,13 @@
 import { z } from 'zod';
 import { User } from '../models/User.js';
+import { WorkoutSession } from '../models/WorkoutSession.js';
+import { Plan } from '../models/Plan.js';
+import { Goal } from '../models/Goal.js';
+import { Exercise } from '../models/Exercise.js';
+import { Food } from '../models/Food.js';
+import { DietLog } from '../models/DietLog.js';
+import { DietPlan } from '../models/DietPlan.js';
+import { BodyMetric } from '../models/BodyMetric.js';
 import { ApiError } from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../utils/jwt.js';
@@ -37,6 +45,13 @@ export const updateMeSchema = z.object({
       dailyCarbsTarget: z.number().positive().nullable().optional(),
       dailyFatTarget: z.number().positive().nullable().optional(),
       mealRemindersEnabled: z.boolean().optional(),
+      dailyWaterMl: z.number().min(0).max(20000).optional(),
+      themeMode: z.enum(['system', 'dark', 'light']).nullable().optional(),
+      accentColor: z
+        .string()
+        .regex(/^#[0-9a-fA-F]{6}$/, 'Use #RRGGBB')
+        .nullable()
+        .optional(),
       usualTrainingTime: z
         .string()
         .regex(/^([01][0-9]|2[0-3]):[0-5][0-9]$/, 'Use HH:mm')
@@ -44,6 +59,11 @@ export const updateMeSchema = z.object({
         .optional(),
     })
     .optional(),
+});
+
+export const deleteAccountSchema = z.object({
+  // The password, so a stolen access token cannot erase an account.
+  password: z.string().min(1),
 });
 
 export const changePasswordSchema = z.object({
@@ -133,4 +153,39 @@ export const changePassword = asyncHandler(async (req, res) => {
   await user.save();
 
   res.json({ success: true, data: { message: 'Password updated' } });
+});
+
+/**
+ * Deletes the account and everything it owns.
+ *
+ * Password-gated: an access token alone must not be enough to erase someone's
+ * training history. Catalog rows (owner null) are shared and are left alone -
+ * only the caller's own custom exercises and foods go.
+ */
+export const deleteAccount = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.userId).select('+passwordHash');
+  if (!user) throw ApiError.notFound('User not found');
+
+  const ok = await user.verifyPassword(req.body.password);
+  if (!ok) throw ApiError.unauthorized('Password is incorrect');
+
+  const owner = user._id;
+  const removed = {};
+  for (const [key, Model] of Object.entries({
+    sessions: WorkoutSession,
+    plans: Plan,
+    goals: Goal,
+    exercises: Exercise,
+    foods: Food,
+    dietLogs: DietLog,
+    dietPlans: DietPlan,
+    bodyMetrics: BodyMetric,
+  })) {
+    const result = await Model.deleteMany({ owner });
+    removed[key] = result.deletedCount;
+  }
+
+  await User.deleteOne({ _id: owner });
+
+  res.json({ success: true, data: { message: 'Account deleted', removed } });
 });

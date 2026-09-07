@@ -33,6 +33,12 @@ const userSchema = new mongoose.Schema(
       mealRemindersEnabled: { type: Boolean, default: true },
       // "HH:mm" in the user's own local time. Null until they tell us.
       usualTrainingTime: { type: String, default: null },
+      // Daily water target in millilitres.
+      dailyWaterMl: { type: Number, default: 3000 },
+      // The user's chosen look. Null until they pick one, which is how the
+      // app knows to keep whatever the device is already showing.
+      themeMode: { type: String, enum: ['system', 'dark', 'light'], default: null },
+      accentColor: { type: String, default: null },
     },
   },
   { timestamps: true }

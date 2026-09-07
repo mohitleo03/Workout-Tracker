@@ -32,6 +32,10 @@ export const upsertDietPlanSchema = z.object({
   meals: z.array(meal).default([]),
 });
 
+export const bulkLogItemsSchema = z.object({
+  items: z.array(z.lazy(() => logItemSchema)).min(1).max(30),
+});
+
 export const logItemSchema = z.object({
   food: objectId.nullable().optional(),
   foodName: z.string().trim().min(1).max(120).optional(),
@@ -181,6 +185,58 @@ export const addLogItem = asyncHandler(async (req, res) => {
     consumedAt: body.consumed ? new Date() : null,
     fromPlan: false,
   });
+
+  await log.save();
+  res.status(201).json({ success: true, data: log });
+});
+
+/**
+ * Adds a whole meal at once.
+ *
+ * A plate is several foods - rice, dal, three chapati, salad - and logging
+ * them one request at a time means one cold start each. Everything lands in a
+ * single save, so the day either gains the whole meal or none of it.
+ */
+export const addLogItems = asyncHandler(async (req, res) => {
+  const log = await loadOrCreateLog(req.userId, req.query.date);
+
+  const wanted = req.body.items;
+  const ids = wanted.map((i) => i.food).filter(Boolean);
+  const foods = await Food.find({
+    _id: { $in: ids },
+    $or: [{ owner: null }, { owner: req.userId }],
+  });
+  const byId = new Map(foods.map((f) => [String(f._id), f]));
+
+  for (const body of wanted) {
+    let macros = body.macros;
+    let foodName = body.foodName;
+    let unit = body.unit;
+
+    if (body.food) {
+      const food = byId.get(String(body.food));
+      if (!food) throw ApiError.badRequest(`Food not found: ${body.food}`);
+      macros = food.macrosFor(body.quantity);
+      foodName = foodName || food.name;
+      unit = unit || food.servingUnit;
+    }
+
+    if (!foodName) throw ApiError.badRequest('foodName is required for a custom entry');
+    if (!macros) throw ApiError.badRequest('macros are required when no food id is given');
+
+    log.items.push({
+      food: body.food || null,
+      foodName,
+      mealName: body.mealName,
+      scheduledTime: body.scheduledTime || null,
+      quantity: body.quantity,
+      unit,
+      ...macros,
+      consumed: body.consumed,
+      consumedAt: body.consumed ? new Date() : null,
+      fromPlan: false,
+    });
+  }
 
   await log.save();
   res.status(201).json({ success: true, data: log });
