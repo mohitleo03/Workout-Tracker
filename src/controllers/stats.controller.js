@@ -7,10 +7,17 @@ import { dayStart } from '../utils/date.js';
 const estimate1RM = (weight, reps) =>
   weight > 0 && reps > 0 ? Math.round(weight * (1 + reps / 30) * 10) / 10 : 0;
 
+/**
+ * The window a stat covers. `days` may be a number, or "all" for everything
+ * ever logged - a cap of 365 quietly hid a second year of training.
+ */
 function rangeFrom(days) {
   const to = dayStart(new Date());
+  if (String(days).toLowerCase() === 'all') {
+    return { from: new Date(0), to };
+  }
   const from = new Date(to);
-  from.setUTCDate(from.getUTCDate() - (Math.min(Number(days) || 30, 365) - 1));
+  from.setUTCDate(from.getUTCDate() - (Math.min(Number(days) || 30, 3650) - 1));
   return { from, to };
 }
 
@@ -60,7 +67,9 @@ export const getOverview = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     data: {
-      rangeDays: Math.min(Number(req.query.days) || 30, 365),
+      rangeDays: String(req.query.days).toLowerCase() === 'all'
+        ? null
+        : Math.min(Number(req.query.days) || 30, 3650),
       workouts: t.workouts || 0,
       totalVolume: Math.round((t.volume || 0) * 10) / 10,
       totalSets: t.sets || 0,

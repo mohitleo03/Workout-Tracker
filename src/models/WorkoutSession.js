@@ -139,6 +139,21 @@ const workoutSessionSchema = new mongoose.Schema(
     entries: { type: [sessionExerciseSchema], default: [] },
     notes: { type: String, default: '' },
 
+    // What the workout is estimated to have cost, worked out when it was
+    // finished. Kept rather than derived on read so it cannot drift as the
+    // model behind it changes, and so the bodyweight used is the one that was
+    // true on the day.
+    energy: {
+      estimatedKcal: { type: Number, default: null },
+      workKcal: { type: Number, default: 0 },
+      restKcal: { type: Number, default: 0 },
+      cardioKcal: { type: Number, default: 0 },
+      warmupKcal: { type: Number, default: 0 },
+      countedSec: { type: Number, default: 0 },
+      bodyWeightKg: { type: Number, default: null },
+      computedAt: { type: Date, default: null },
+    },
+
     // Denormalised roll-ups, recomputed on every save.
     totalVolume: { type: Number, default: 0 },
     totalSets: { type: Number, default: 0 },

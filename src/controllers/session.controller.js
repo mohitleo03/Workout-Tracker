@@ -1,7 +1,10 @@
+import mongoose from 'mongoose';
 import { z } from 'zod';
 import { WorkoutSession } from '../models/WorkoutSession.js';
 import { Plan, SET_TYPES, EXERCISE_KINDS } from '../models/Plan.js';
 import { Exercise } from '../models/Exercise.js';
+import { BodyMetric } from '../models/BodyMetric.js';
+import { estimateSessionCalories } from '../utils/calories.js';
 import { ApiError } from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { dayStart } from '../utils/date.js';
@@ -465,6 +468,56 @@ export const completeWarmup = asyncHandler(async (req, res) => {
   res.json({ success: true, data: populated });
 });
 
+/**
+ * Everything the energy estimate needs that does not live on the session:
+ * the user's current bodyweight, their best lift for each exercise in it, and
+ * whether each one is a compound.
+ */
+async function energyInputs(session, userId) {
+  const exerciseIds = [...new Set(session.entries.map((e) => String(e.exercise)))];
+
+  const [latestWeight, exercises, records] = await Promise.all([
+    BodyMetric.findOne({ owner: userId, weightKg: { $ne: null } })
+      .sort({ date: -1 })
+      .select('weightKg')
+      .lean(),
+    Exercise.find({ _id: { $in: exerciseIds } }).select('mechanic').lean(),
+    // Best estimated 1RM per exercise, so intensity is measured against this
+    // user's own history rather than a generic table.
+    WorkoutSession.aggregate([
+      {
+        $match: {
+          owner: new mongoose.Types.ObjectId(userId),
+          status: 'completed',
+          'entries.exercise': { $in: exerciseIds.map((id) => new mongoose.Types.ObjectId(id)) },
+        },
+      },
+      { $unwind: '$entries' },
+      { $unwind: '$entries.sets' },
+      { $match: { 'entries.sets.completed': true, 'entries.sets.isWarmup': false } },
+      {
+        $group: {
+          _id: '$entries.exercise',
+          best: {
+            $max: {
+              $multiply: [
+                '$entries.sets.weight',
+                { $add: [1, { $divide: ['$entries.sets.reps', 30] }] },
+              ],
+            },
+          },
+        },
+      },
+    ]),
+  ]);
+
+  return {
+    bodyWeightKg: latestWeight?.weightKg ?? null,
+    mechanicByExercise: new Map(exercises.map((e) => [String(e._id), e.mechanic])),
+    bestE1RMByExercise: new Map(records.map((r) => [String(r._id), r.best])),
+  };
+}
+
 export const finishSession = asyncHandler(async (req, res) => {
   const session = await loadOwnedSession(req.params.id, req.userId);
   if (session.status !== 'in_progress') throw ApiError.badRequest('Session is already closed');
@@ -482,6 +535,18 @@ export const finishSession = asyncHandler(async (req, res) => {
   session.endedAt = req.body.endedAt || new Date();
   session.status = req.body.status;
   if (req.body.notes !== undefined) session.notes = req.body.notes;
+
+  // Estimated now, while the sets and their rest periods are all present.
+  // Without a recorded bodyweight there is nothing to scale by, and a guess
+  // would be a number the user has no way to tell is wrong.
+  try {
+    const energy = estimateSessionCalories(session, await energyInputs(session, req.userId));
+    if (energy) session.energy = energy;
+  } catch (err) {
+    // An estimate is not worth failing a finished workout over.
+    console.error('[energy] could not estimate session', err);
+  }
+
   await session.save();
 
   // The in-app timer is the source of truth when it kept running in the

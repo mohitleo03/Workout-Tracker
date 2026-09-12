@@ -333,10 +333,16 @@ export const getPendingMeals = asyncHandler(async (req, res) => {
 
 /** Daily totals across a date range, for the diet trend chart. */
 export const getDietSummary = asyncHandler(async (req, res) => {
-  const days = Math.min(Number(req.query.days) || 7, 90);
+  // "all" reaches back to the first day logged; the numeric cap is a guard
+  // against one request asking for a decade of rows, not a retention rule.
+  const all = String(req.query.days).toLowerCase() === 'all';
   const to = dayStart(new Date());
   const from = new Date(to);
-  from.setUTCDate(from.getUTCDate() - (days - 1));
+  if (all) {
+    from.setTime(0);
+  } else {
+    from.setUTCDate(from.getUTCDate() - (Math.min(Number(req.query.days) || 7, 3650) - 1));
+  }
 
   const logs = await DietLog.find({ owner: req.userId, date: { $gte: from, $lte: to } })
     .sort({ date: 1 })
