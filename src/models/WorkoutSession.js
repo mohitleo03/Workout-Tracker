@@ -33,6 +33,12 @@ const setSchema = new mongoose.Schema(
     // Rest taken after this set, before the next one.
     restSec: { type: Number, default: 0 },
 
+    // Reps left in the tank at the end of the set: 0 means nothing left, 4
+    // means it was easy. Null is the normal case - most people mark their top
+    // set and leave the rest alone, and an unmarked set must never be read as
+    // a zero, which would mean the opposite of "not recorded".
+    repsInReserve: { type: Number, default: null, min: 0, max: 10 },
+
     completed: { type: Boolean, default: true },
     completedAt: { type: Date, default: Date.now },
     notes: { type: String, default: '' },
