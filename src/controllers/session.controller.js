@@ -31,6 +31,24 @@ export const setInputSchema = z.object({
   notes: z.string().max(500).default(''),
 });
 
+/**
+ * Correcting a set after the fact. Every field is optional - only what the
+ * user actually changed is sent - and setNumber is deliberately absent, since
+ * a set's position is decided by the list, not by the client.
+ */
+export const updateSetSchema = z.object({
+  reps: z.number().int().min(0).optional(),
+  weight: z.number().optional(),
+  unit: z.enum(['kg', 'lb']).optional(),
+  setType: z.enum(SET_TYPES).optional(),
+  isWarmup: z.boolean().optional(),
+  forceDropSet: z.boolean().optional(),
+  drops: z.array(dropSchema).optional(),
+  durationSec: z.number().int().min(0).optional(),
+  restSec: z.number().int().min(0).optional(),
+  notes: z.string().max(500).optional(),
+});
+
 export const startSessionSchema = z.object({
   planId: objectId.nullable().optional(),
   planDayId: objectId.nullable().optional(),
@@ -80,6 +98,28 @@ export const listQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });
+
+/**
+ * Saves, and keeps a finished workout's calorie estimate honest.
+ *
+ * A completed session can still be corrected - a mistyped weight, a set that
+ * was mis-tapped - and that changes what the workout cost. Leaving the old
+ * figure in place would make the number disagree with the sets it was worked
+ * out from.
+ */
+async function saveSession(session, userId) {
+  if (session.status === 'completed') {
+    try {
+      const energy = await estimateFor(session, userId);
+      if (energy) session.energy = energy;
+    } catch (err) {
+      // An estimate is not worth failing the edit over.
+      console.error('[energy] could not re-estimate session', err);
+    }
+  }
+  await session.save();
+  return session;
+}
 
 async function loadOwnedSession(sessionId, userId) {
   const session = await WorkoutSession.findOne({ _id: sessionId, owner: userId });
@@ -268,7 +308,7 @@ export const removeEntry = asyncHandler(async (req, res) => {
   if (!entry) throw ApiError.notFound('Exercise not found in this session');
 
   entry.deleteOne();
-  await session.save();
+  await saveSession(session, req.userId);
   res.json({ success: true, data: session });
 });
 
@@ -283,7 +323,7 @@ export const updateEntry = asyncHandler(async (req, res) => {
   if (notes !== undefined) entry.notes = notes;
   if (order !== undefined) entry.order = order;
 
-  await session.save();
+  await saveSession(session, req.userId);
   res.json({ success: true, data: session });
 });
 
@@ -299,7 +339,7 @@ export const addSet = asyncHandler(async (req, res) => {
   payload.drops = (payload.drops || []).map((d, i) => ({ ...d, order: d.order ?? i }));
 
   entry.sets.push(payload);
-  await session.save();
+  await saveSession(session, req.userId);
 
   res.status(201).json({ success: true, data: session });
 });
@@ -315,7 +355,7 @@ export const updateSet = asyncHandler(async (req, res) => {
   if (req.body.drops) {
     set.drops = req.body.drops.map((d, i) => ({ ...d, order: d.order ?? i }));
   }
-  await session.save();
+  await saveSession(session, req.userId);
 
   res.json({ success: true, data: session });
 });
@@ -329,7 +369,7 @@ export const deleteSet = asyncHandler(async (req, res) => {
 
   set.deleteOne();
   entry.sets.forEach((s, i) => { s.setNumber = i + 1; });
-  await session.save();
+  await saveSession(session, req.userId);
 
   res.json({ success: true, data: session });
 });
@@ -349,7 +389,7 @@ export const recordRest = asyncHandler(async (req, res) => {
   if (!Number.isFinite(restSec) || restSec < 0) throw ApiError.badRequest('restSec must be >= 0');
 
   set.restSec = Math.round(restSec);
-  await session.save();
+  await saveSession(session, req.userId);
 
   res.json({ success: true, data: { setId: set._id, restSec: set.restSec } });
 });

@@ -25,7 +25,7 @@ router.patch('/:id/entries/:entryId', c.updateEntry);
 router.delete('/:id/entries/:entryId', c.removeEntry);
 
 router.post('/:id/entries/:entryId/sets', validate(c.setInputSchema), c.addSet);
-router.patch('/:id/entries/:entryId/sets/:setId', c.updateSet);
+router.patch('/:id/entries/:entryId/sets/:setId', validate(c.updateSetSchema), c.updateSet);
 router.delete('/:id/entries/:entryId/sets/:setId', c.deleteSet);
 router.post('/:id/entries/:entryId/sets/:setId/rest', c.recordRest);
 
