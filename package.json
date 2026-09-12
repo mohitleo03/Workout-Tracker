@@ -10,7 +10,8 @@
     "seed:exercises": "node src/seed/seedExercises.js",
     "seed:foods": "node src/seed/seedFoods.js",
     "seed": "npm run seed:exercises && npm run seed:foods",
-    "vercel-dev": "vercel dev"
+    "vercel-dev": "vercel dev",
+    "backfill:energy": "node src/scripts/backfillEnergy.js"
   },
   "engines": {
     "node": ">=20.0.0"
