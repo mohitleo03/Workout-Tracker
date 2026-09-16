@@ -23,6 +23,9 @@ const userSchema = new mongoose.Schema(
       birthDate: { type: Date, default: null },
       gender: { type: String, enum: ['male', 'female', 'other', null], default: null },
     },
+    // 'admin' approves accounts and extends access; everyone else is 'user'.
+    role: { type: String, enum: ['user', 'admin'], default: 'user', index: true },
+
     // Accounts are approved by hand: a new sign-up can log in and see its
     // own status, but nothing else, until this is turned on.
     isActive: { type: Boolean, default: false, index: true },
@@ -47,6 +50,11 @@ const userSchema = new mongoose.Schema(
       // app knows to keep whatever the device is already showing.
       themeMode: { type: String, enum: ['system', 'dark', 'light'], default: null },
       accentColor: { type: String, default: null },
+      // Reminders the phone schedules for itself. Off until switched on:
+      // nobody signed up for a notification every two hours by default.
+      waterRemindersEnabled: { type: Boolean, default: false },
+      weighInRemindersEnabled: { type: Boolean, default: false },
+      workoutRemindersEnabled: { type: Boolean, default: false },
     },
   },
   { timestamps: true }
@@ -57,6 +65,8 @@ const userSchema = new mongoose.Schema(
  * or 'expired'. One field the app can branch on beats it re-deriving the rule.
  */
 userSchema.virtual('accessState').get(function accessState() {
+  // The admin approves everyone else, so can never be locked out themselves.
+  if (this.role === 'admin') return 'active';
   if (!this.isActive) return 'pending';
   if (this.subscriptionExpiresAt && this.subscriptionExpiresAt.getTime() < Date.now()) {
     return 'expired';
@@ -77,6 +87,7 @@ userSchema.methods.toPublic = function toPublic() {
     id: this._id,
     email: this.email,
     name: this.name,
+    role: this.role || 'user',
     profile: this.profile,
     preferences: this.preferences,
     isActive: this.isActive,

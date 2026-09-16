@@ -304,6 +304,85 @@ export const updateEntry = asyncHandler(async (req, res) => {
   res.json({ success: true, data: session });
 });
 
+export const swapEntrySchema = z.object({ exercise: objectId });
+
+/**
+ * Puts a different exercise in an entry's place - the machine is taken, so the
+ * same slot gets done with something else.
+ *
+ * Position, kind, superset pairing and the planned sets and reps stay; the
+ * planned loads do not, because 100 kg on a leg press says nothing about a
+ * hack squat. Refused once a set is logged: those sets belong to the exercise
+ * that was actually done.
+ */
+export const swapEntry = asyncHandler(async (req, res) => {
+  const session = await loadOwnedSession(req.params.id, req.userId);
+  if (session.status !== 'in_progress') {
+    throw ApiError.badRequest('Only a workout in progress can have an exercise swapped.');
+  }
+
+  const entry = session.entries.id(req.params.entryId);
+  if (!entry) throw ApiError.notFound('Exercise not found in this session');
+  if (entry.sets.length > 0) {
+    throw ApiError.conflict(
+      'This exercise already has sets logged. Remove them first, or add the other exercise instead.'
+    );
+  }
+
+  const exercise = await Exercise.findOne({
+    _id: req.body.exercise,
+    $or: [{ owner: null }, { owner: req.userId }],
+  }).select('name');
+  if (!exercise) throw ApiError.badRequest('Exercise not found');
+
+  entry.exercise = exercise._id;
+  entry.exerciseName = exercise.name;
+  entry.targetWeight = null;
+  for (const planned of entry.plannedSets) {
+    planned.weight = null;
+    planned.drops = [];
+  }
+
+  await session.save();
+  const populated = await session.populate('entries.exercise', 'name images primaryMuscles equipment');
+  res.json({ success: true, data: populated });
+});
+
+export const reorderEntriesSchema = z.object({ entryIds: z.array(objectId).min(1) });
+
+/**
+ * Puts the workout's exercises in a new order - the gym decides what is free,
+ * not the plan. One request for the whole order, so it can never end up half
+ * moved the way several separate updates could.
+ */
+export const reorderEntries = asyncHandler(async (req, res) => {
+  const session = await loadOwnedSession(req.params.id, req.userId);
+  if (session.status !== 'in_progress') {
+    throw ApiError.badRequest('Only a workout in progress can be reordered.');
+  }
+
+  const ids = req.body.entryIds;
+  const current = new Set(session.entries.map((e) => String(e._id)));
+  const complete =
+    ids.length === current.size &&
+    new Set(ids).size === ids.length &&
+    ids.every((id) => current.has(id));
+  if (!complete) {
+    throw ApiError.badRequest('entryIds must list every exercise in the workout exactly once.');
+  }
+
+  const reordered = ids.map((id, i) => {
+    const entry = session.entries.id(id).toObject();
+    entry.order = i;
+    return entry;
+  });
+  session.entries = reordered;
+
+  await session.save();
+  const populated = await session.populate('entries.exercise', 'name images primaryMuscles equipment');
+  res.json({ success: true, data: populated });
+});
+
 /** Log one completed set (including any drops) against an exercise. */
 export const addSet = asyncHandler(async (req, res) => {
   const session = await loadOwnedSession(req.params.id, req.userId);

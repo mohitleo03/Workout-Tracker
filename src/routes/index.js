@@ -8,6 +8,8 @@ import dietRoutes from './diet.routes.js';
 import goalRoutes from './goal.routes.js';
 import metricRoutes from './metric.routes.js';
 import statsRoutes from './stats.routes.js';
+import exerciseNoteRoutes from './exerciseNote.routes.js';
+import adminRoutes from './admin.routes.js';
 
 const router = Router();
 
@@ -24,5 +26,7 @@ router.use('/diet', dietRoutes);
 router.use('/goals', goalRoutes);
 router.use('/metrics', metricRoutes);
 router.use('/stats', statsRoutes);
+router.use('/exercise-notes', exerciseNoteRoutes);
+router.use('/admin', adminRoutes);
 
 export default router;

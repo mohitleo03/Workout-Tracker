@@ -9,6 +9,7 @@ import { Food } from '../models/Food.js';
 import { DietLog } from '../models/DietLog.js';
 import { DietPlan } from '../models/DietPlan.js';
 import { BodyMetric } from '../models/BodyMetric.js';
+import { ExerciseNote } from '../models/ExerciseNote.js';
 import { ApiError } from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../utils/jwt.js';
@@ -46,6 +47,9 @@ export const updateMeSchema = z.object({
       dailyCarbsTarget: z.number().positive().nullable().optional(),
       dailyFatTarget: z.number().positive().nullable().optional(),
       mealRemindersEnabled: z.boolean().optional(),
+      waterRemindersEnabled: z.boolean().optional(),
+      weighInRemindersEnabled: z.boolean().optional(),
+      workoutRemindersEnabled: z.boolean().optional(),
       dailyWaterMl: z.number().min(0).max(20000).optional(),
       themeMode: z.enum(['system', 'dark', 'light']).nullable().optional(),
       accentColor: z
@@ -190,6 +194,7 @@ export const deleteAccount = asyncHandler(async (req, res) => {
     dietLogs: DietLog,
     dietPlans: DietPlan,
     bodyMetrics: BodyMetric,
+    exerciseNotes: ExerciseNote,
   })) {
     const result = await Model.deleteMany({ owner });
     removed[key] = result.deletedCount;

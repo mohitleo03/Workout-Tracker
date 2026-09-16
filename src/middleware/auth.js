@@ -16,7 +16,7 @@ export async function requireAuth(req, _res, next) {
     }
 
     const user = await User.findById(payload.sub)
-      .select('_id email name preferences isActive subscriptionExpiresAt');
+      .select('_id email name role preferences isActive subscriptionExpiresAt');
     if (!user) throw ApiError.unauthorized('User no longer exists');
 
     req.user = user;
@@ -38,6 +38,9 @@ export function requireActiveAccount(req, _res, next) {
   const user = req.user;
   if (!user) return next(ApiError.unauthorized('Not signed in'));
 
+  // Whoever approves accounts must not be able to be locked out of doing so.
+  if (user.role === 'admin') return next();
+
   if (!user.isActive) {
     return next(
       ApiError.forbidden('This account is waiting to be activated.', {
@@ -56,5 +59,13 @@ export function requireActiveAccount(req, _res, next) {
     );
   }
 
+  next();
+}
+
+/** Only for accounts with the admin role. Mount after requireAuth. */
+export function requireAdmin(req, _res, next) {
+  if (req.user?.role !== 'admin') {
+    return next(ApiError.forbidden('Only an admin can do that.', { code: 'ADMIN_ONLY' }));
+  }
   next();
 }

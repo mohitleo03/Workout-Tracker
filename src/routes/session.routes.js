@@ -23,6 +23,8 @@ router.post('/:id/warmup/cancel', c.cancelWarmup);
 router.post('/:id/entries', validate(c.addEntrySchema), c.addEntry);
 router.patch('/:id/entries/:entryId', c.updateEntry);
 router.delete('/:id/entries/:entryId', c.removeEntry);
+router.post('/:id/entries/:entryId/swap', validate(c.swapEntrySchema), c.swapEntry);
+router.put('/:id/order', validate(c.reorderEntriesSchema), c.reorderEntries);
 
 router.post('/:id/entries/:entryId/sets', validate(c.setInputSchema), c.addSet);
 router.patch('/:id/entries/:entryId/sets/:setId', validate(c.updateSetSchema), c.updateSet);
