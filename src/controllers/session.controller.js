@@ -2,7 +2,6 @@ import { z } from 'zod';
 import { WorkoutSession } from '../models/WorkoutSession.js';
 import { Plan, SET_TYPES, EXERCISE_KINDS } from '../models/Plan.js';
 import { Exercise } from '../models/Exercise.js';
-import { estimateFor } from '../services/energy.js';
 import { ApiError } from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { dayStart } from '../utils/date.js';
@@ -100,28 +99,6 @@ export const listQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });
-
-/**
- * Saves, and keeps a finished workout's calorie estimate honest.
- *
- * A completed session can still be corrected - a mistyped weight, a set that
- * was mis-tapped - and that changes what the workout cost. Leaving the old
- * figure in place would make the number disagree with the sets it was worked
- * out from.
- */
-async function saveSession(session, userId) {
-  if (session.status === 'completed') {
-    try {
-      const energy = await estimateFor(session, userId);
-      if (energy) session.energy = energy;
-    } catch (err) {
-      // An estimate is not worth failing the edit over.
-      console.error('[energy] could not re-estimate session', err);
-    }
-  }
-  await session.save();
-  return session;
-}
 
 async function loadOwnedSession(sessionId, userId) {
   const session = await WorkoutSession.findOne({ _id: sessionId, owner: userId });
@@ -310,7 +287,7 @@ export const removeEntry = asyncHandler(async (req, res) => {
   if (!entry) throw ApiError.notFound('Exercise not found in this session');
 
   entry.deleteOne();
-  await saveSession(session, req.userId);
+  await session.save();
   res.json({ success: true, data: session });
 });
 
@@ -325,7 +302,7 @@ export const updateEntry = asyncHandler(async (req, res) => {
   if (notes !== undefined) entry.notes = notes;
   if (order !== undefined) entry.order = order;
 
-  await saveSession(session, req.userId);
+  await session.save();
   res.json({ success: true, data: session });
 });
 
@@ -341,7 +318,7 @@ export const addSet = asyncHandler(async (req, res) => {
   payload.drops = (payload.drops || []).map((d, i) => ({ ...d, order: d.order ?? i }));
 
   entry.sets.push(payload);
-  await saveSession(session, req.userId);
+  await session.save();
 
   res.status(201).json({ success: true, data: session });
 });
@@ -357,7 +334,7 @@ export const updateSet = asyncHandler(async (req, res) => {
   if (req.body.drops) {
     set.drops = req.body.drops.map((d, i) => ({ ...d, order: d.order ?? i }));
   }
-  await saveSession(session, req.userId);
+  await session.save();
 
   res.json({ success: true, data: session });
 });
@@ -371,7 +348,7 @@ export const deleteSet = asyncHandler(async (req, res) => {
 
   set.deleteOne();
   entry.sets.forEach((s, i) => { s.setNumber = i + 1; });
-  await saveSession(session, req.userId);
+  await session.save();
 
   res.json({ success: true, data: session });
 });
@@ -391,7 +368,7 @@ export const recordRest = asyncHandler(async (req, res) => {
   if (!Number.isFinite(restSec) || restSec < 0) throw ApiError.badRequest('restSec must be >= 0');
 
   set.restSec = Math.round(restSec);
-  await saveSession(session, req.userId);
+  await session.save();
 
   res.json({ success: true, data: { setId: set._id, restSec: set.restSec } });
 });
@@ -525,17 +502,6 @@ export const finishSession = asyncHandler(async (req, res) => {
   session.endedAt = req.body.endedAt || new Date();
   session.status = req.body.status;
   if (req.body.notes !== undefined) session.notes = req.body.notes;
-
-  // Estimated now, while the sets and their rest periods are all present.
-  // Without a recorded bodyweight there is nothing to scale by, and a guess
-  // would be a number the user has no way to tell is wrong.
-  try {
-    const energy = await estimateFor(session, req.userId);
-    if (energy) session.energy = energy;
-  } catch (err) {
-    // An estimate is not worth failing a finished workout over.
-    console.error('[energy] could not estimate session', err);
-  }
 
   await session.save();
 
