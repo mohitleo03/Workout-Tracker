@@ -144,6 +144,12 @@ const workoutSessionSchema = new mongoose.Schema(
     entries: { type: [sessionExerciseSchema], default: [] },
     notes: { type: String, default: '' },
 
+    // Lighter on purpose - recovering, run down, coming back from illness.
+    // Marked by the user, day by day. Its sets still count as training done,
+    // but it is never the yardstick: not compared on time or volume against
+    // normal days, and not what the next workout's numbers build on.
+    isDeload: { type: Boolean, default: false },
+
     // Denormalised roll-ups, recomputed on every save.
     totalVolume: { type: Number, default: 0 },
     totalSets: { type: Number, default: 0 },

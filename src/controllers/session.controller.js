@@ -595,6 +595,29 @@ export const finishSession = asyncHandler(async (req, res) => {
   res.json({ success: true, data: session });
 });
 
+export const deloadSchema = z.object({ isDeload: z.boolean() });
+
+/**
+ * Marks a workout as a deload day, or takes the mark off. Allowed during the
+ * workout and afterwards from history, since the call is often only made
+ * halfway through - or the next morning.
+ *
+ * Written as a single field: saving the whole document would re-run the
+ * roll-ups and overwrite a finished workout's recorded duration.
+ */
+export const setDeload = asyncHandler(async (req, res) => {
+  const result = await WorkoutSession.updateOne(
+    { _id: req.params.id, owner: req.userId },
+    { $set: { isDeload: req.body.isDeload } }
+  );
+  if (result.matchedCount === 0) throw ApiError.notFound('Workout session not found');
+
+  const session = await WorkoutSession.findById(req.params.id)
+    .populate('entries.exercise', 'name images primaryMuscles secondaryMuscles equipment instructions')
+    .lean({ virtuals: true });
+  res.json({ success: true, data: session });
+});
+
 export const deleteSession = asyncHandler(async (req, res) => {
   const result = await WorkoutSession.deleteOne({ _id: req.params.id, owner: req.userId });
   if (result.deletedCount === 0) throw ApiError.notFound('Workout session not found');
@@ -606,19 +629,33 @@ export const deleteSession = asyncHandler(async (req, res) => {
  * weights and show "last time you did 60kg x 8".
  */
 export const getLastPerformance = asyncHandler(async (req, res) => {
-  const session = await WorkoutSession.findOne({
+  const match = {
     owner: req.userId,
     status: 'completed',
     'entries.exercise': req.params.exerciseId,
-  })
-    .sort({ date: -1 })
-    .lean({ virtuals: true });
+  };
+
+  // A deload day is not what the next workout should build on, so the last
+  // normal day wins. Only when every time this was done was a deload does
+  // one stand in - a lighter reference beats none.
+  const session =
+    (await WorkoutSession.findOne({ ...match, isDeload: { $ne: true } })
+      .sort({ date: -1, startedAt: -1 })
+      .lean({ virtuals: true })) ||
+    (await WorkoutSession.findOne(match).sort({ date: -1, startedAt: -1 }).lean({ virtuals: true }));
 
   if (!session) return res.json({ success: true, data: null });
 
   const entry = session.entries.find((e) => String(e.exercise) === String(req.params.exerciseId));
   res.json({
     success: true,
-    data: entry ? { date: session.date, sessionId: session._id, sets: entry.sets } : null,
+    data: entry
+      ? {
+          date: session.date,
+          sessionId: session._id,
+          isDeload: session.isDeload === true,
+          sets: entry.sets,
+        }
+      : null,
   });
 });

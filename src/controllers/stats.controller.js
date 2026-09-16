@@ -295,7 +295,15 @@ export const getProgress = asyncHandler(async (req, res) => {
   const limit = Math.min(Number(req.query.limit) || 12, 40);
 
   // Enough history that recent sessions can each find their predecessor.
-  const sessions = await WorkoutSession.find({ owner: req.userId, status: 'completed' })
+  //
+  // Deload days are left out entirely. Compared, one reads as a record-fast
+  // workout with a volume crash, and the normal day after it as slow - both
+  // false. Skipped, the next normal day is compared with the last normal one.
+  const sessions = await WorkoutSession.find({
+    owner: req.userId,
+    status: 'completed',
+    isDeload: { $ne: true },
+  })
     .sort({ date: -1, startedAt: -1 })
     .limit(80)
     .select('title date startedAt planDayId muscleGroups sequence totalDurationSec entries')

@@ -55,6 +55,12 @@ const userSchema = new mongoose.Schema(
       waterRemindersEnabled: { type: Boolean, default: false },
       weighInRemindersEnabled: { type: Boolean, default: false },
       workoutRemindersEnabled: { type: Boolean, default: false },
+      // Suggest more weight once every planned rep was hit last time. Off
+      // until chosen: an app quietly raising the bar is not everyone's wish.
+      progressiveOverloadEnabled: { type: Boolean, default: false },
+      // The jump to suggest, in the user's weight unit. Null means the
+      // app's default for that unit.
+      overloadIncrement: { type: Number, default: null },
     },
   },
   { timestamps: true }

@@ -50,6 +50,8 @@ export const updateMeSchema = z.object({
       waterRemindersEnabled: z.boolean().optional(),
       weighInRemindersEnabled: z.boolean().optional(),
       workoutRemindersEnabled: z.boolean().optional(),
+      progressiveOverloadEnabled: z.boolean().optional(),
+      overloadIncrement: z.number().positive().max(50).nullable().optional(),
       dailyWaterMl: z.number().min(0).max(20000).optional(),
       themeMode: z.enum(['system', 'dark', 'light']).nullable().optional(),
       accentColor: z

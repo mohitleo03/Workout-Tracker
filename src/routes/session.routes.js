@@ -14,6 +14,7 @@ router.get('/last-performance/:exerciseId', c.getLastPerformance);
 router.get('/:id', c.getSession);
 router.delete('/:id', c.deleteSession);
 router.post('/:id/finish', validate(c.finishSessionSchema), c.finishSession);
+router.patch('/:id/deload', validate(c.deloadSchema), c.setDeload);
 
 // The warm-up is one block, not a tap per drill.
 router.post('/:id/warmup/start', c.startWarmup);
