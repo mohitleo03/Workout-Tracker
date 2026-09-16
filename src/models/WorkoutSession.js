@@ -2,9 +2,8 @@ import mongoose from 'mongoose';
 import { SET_TYPES, EXERCISE_KINDS } from './Plan.js';
 
 /**
- * A weight drop inside a single working set.
- * A set only counts as a real drop set when it has 2 or more drops, unless the
- * user explicitly flags it - see the isDropSet virtual below.
+ * A weight drop inside a single working set. Any drop at all makes the set a
+ * drop set - see the isDropSet virtual below.
  */
 const dropSchema = new mongoose.Schema(
   {
@@ -24,8 +23,6 @@ const setSchema = new mongoose.Schema(
 
     setType: { type: String, enum: SET_TYPES, default: 'normal' },
     isWarmup: { type: Boolean, default: false },
-    // Explicit override: a single drop is not a drop set unless the user says so.
-    forceDropSet: { type: Boolean, default: false },
     drops: { type: [dropSchema], default: [] },
 
     // How long the set itself took.
@@ -57,8 +54,10 @@ setSchema.virtual('volume').get(function volume() {
   return this.drops.reduce((s, d) => s + (d.weight || 0) * (d.reps || 0), base);
 });
 
+// One drop is enough. A separate "back-off" for a single drop, with a switch
+// to promote it, only made people wonder which one they had logged.
 setSchema.virtual('isDropSet').get(function isDropSet() {
-  return this.forceDropSet || this.drops.length >= 2;
+  return this.drops.length > 0;
 });
 
 const sessionExerciseSchema = new mongoose.Schema(
