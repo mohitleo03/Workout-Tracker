@@ -16,6 +16,7 @@ const toRow = (user) => ({
   email: user.email,
   name: user.name,
   role: user.role || 'user',
+  emailVerified: user.emailVerified !== false,
   isActive: user.isActive,
   activatedAt: user.activatedAt,
   subscriptionExpiresAt: user.subscriptionExpiresAt,

@@ -14,6 +14,9 @@ import { ExerciseNote } from '../models/ExerciseNote.js';
 import { ApiError } from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../utils/jwt.js';
+import { issuedBeforePasswordReset } from '../middleware/auth.js';
+import { EmailCode } from '../models/EmailCode.js';
+import { sendCode, useCode } from '../services/emailCodes.js';
 
 export const registerSchema = z.object({
   email: z.string().email(),
@@ -28,6 +31,18 @@ export const loginSchema = z.object({
 
 export const refreshSchema = z.object({
   refreshToken: z.string().min(10),
+});
+
+const fourDigits = z.string().regex(/^\d{4}$/, 'Enter the 4-digit code');
+
+export const verifyEmailSchema = z.object({ code: fourDigits });
+
+export const forgotPasswordSchema = z.object({ email: z.string().email() });
+
+export const resetPasswordSchema = z.object({
+  email: z.string().email(),
+  code: fourDigits,
+  newPassword: z.string().min(6, 'Password must be at least 6 characters'),
 });
 
 export const updateMeSchema = z.object({
@@ -81,7 +96,7 @@ export const deleteAccountSchema = z.object({
 
 export const changePasswordSchema = z.object({
   currentPassword: z.string().min(1),
-  newPassword: z.string().min(6),
+  newPassword: z.string().min(6, 'Password must be at least 6 characters'),
 });
 
 function authPayload(user) {
@@ -96,6 +111,17 @@ export const register = asyncHandler(async (req, res) => {
   const { email, password, name } = req.body;
 
   const existing = await User.findOne({ email: email.toLowerCase() });
+
+  // An address never confirmed does not belong to that sign-up yet. Whoever
+  // can read the inbox can sign up with it again - otherwise a typo, or
+  // someone else's attempt, would lock the real owner out of their own email.
+  if (existing && existing.emailVerified === false) {
+    existing.name = name || existing.name;
+    await existing.setPassword(password);
+    await existing.save();
+    const verification = await trySendVerification(existing.email);
+    return res.status(201).json({ success: true, data: { ...authPayload(existing), verification } });
+  }
   if (existing) throw ApiError.conflict('An account with that email already exists');
 
   const user = new User({
@@ -110,11 +136,102 @@ export const register = asyncHandler(async (req, res) => {
     // A new sign-up starts with the basic features on and the advanced ones
     // off. Accounts from before this never have it, and keep everything on.
     preferences: { featureDefaults: 'standard' },
+    // Confirmed with the emailed code before the account can be used.
+    emailVerified: false,
   });
   await user.setPassword(password);
   await user.save();
 
-  res.status(201).json({ success: true, data: authPayload(user) });
+  const verification = await trySendVerification(user.email);
+  res.status(201).json({ success: true, data: { ...authPayload(user), verification } });
+});
+
+/**
+ * Sends the sign-up code without letting a mail problem fail the sign-up: the
+ * account exists either way, and the app offers to send the code again.
+ */
+async function trySendVerification(email) {
+  try {
+    const { resendInSec } = await sendCode(email, 'verify_email');
+    return { sent: true, resendInSec };
+  } catch (err) {
+    return {
+      sent: false,
+      resendInSec: err.details?.retryAfterSec ?? 0,
+      message: err.message,
+    };
+  }
+}
+
+/** Emails a fresh sign-up code to the signed-in account. */
+export const sendVerification = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.userId);
+  if (!user) throw ApiError.notFound('User not found');
+  if (user.emailVerified !== false) {
+    return res.json({ success: true, data: { alreadyVerified: true } });
+  }
+
+  const { resendInSec } = await sendCode(user.email, 'verify_email');
+  res.json({ success: true, data: { sentTo: user.email, resendInSec } });
+});
+
+/** Confirms the signed-in account's email with the code sent to it. */
+export const verifyEmail = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.userId);
+  if (!user) throw ApiError.notFound('User not found');
+
+  if (user.emailVerified === false) {
+    await useCode(user.email, 'verify_email', req.body.code);
+    user.emailVerified = true;
+    await user.save();
+  }
+  res.json({ success: true, data: user.toPublic() });
+});
+
+/**
+ * Starts a password reset. The answer is the same whether or not an account
+ * exists, so the form cannot be used to find out who has one.
+ */
+export const forgotPassword = asyncHandler(async (req, res) => {
+  const email = req.body.email.toLowerCase();
+  const user = await User.findOne({ email });
+
+  let resendInSec = 60;
+  if (user) {
+    ({ resendInSec } = await sendCode(email, 'reset_password'));
+  }
+  res.json({
+    success: true,
+    data: {
+      message: 'If an account exists for that email, a code is on its way.',
+      resendInSec,
+    },
+  });
+});
+
+/**
+ * Sets a new password with the emailed code, and signs in. Every session from
+ * before stops working, and the email counts as confirmed: the code proves
+ * the inbox is theirs.
+ */
+export const resetPassword = asyncHandler(async (req, res) => {
+  const email = req.body.email.toLowerCase();
+  const user = await User.findOne({ email }).select('+passwordHash');
+  if (!user) {
+    // Same wording as a wrong code, for the same reason as above.
+    throw ApiError.badRequest('That code has expired. Ask for a new one.', { code: 'CODE_EXPIRED' });
+  }
+
+  await useCode(email, 'reset_password', req.body.code);
+
+  await user.setPassword(req.body.newPassword);
+  user.emailVerified = true;
+  // Rounded down to the second, like a JWT's issue time, so the tokens
+  // handed back below are not already out of date.
+  user.passwordChangedAt = new Date(Math.floor(Date.now() / 1000) * 1000);
+  await user.save();
+
+  res.json({ success: true, data: authPayload(user) });
 });
 
 export const login = asyncHandler(async (req, res) => {
@@ -141,6 +258,9 @@ export const refresh = asyncHandler(async (req, res) => {
 
   const user = await User.findById(payload.sub);
   if (!user) throw ApiError.unauthorized('User no longer exists');
+  if (issuedBeforePasswordReset(payload, user)) {
+    throw ApiError.unauthorized('Signed out after a password reset', { code: 'PASSWORD_RESET' });
+  }
 
   res.json({
     success: true,
@@ -167,17 +287,36 @@ export const updateMe = asyncHandler(async (req, res) => {
   res.json({ success: true, data: user.toPublic() });
 });
 
+/**
+ * Changes the password of the signed-in account.
+ *
+ * Signs out every other session, as a reset does - changing a password is
+ * usually because someone else may know it - and hands this one fresh tokens
+ * so it stays signed in.
+ */
 export const changePassword = asyncHandler(async (req, res) => {
   const user = await User.findById(req.userId).select('+passwordHash');
   if (!user) throw ApiError.notFound('User not found');
 
   const ok = await user.verifyPassword(req.body.currentPassword);
-  if (!ok) throw ApiError.unauthorized('Current password is incorrect');
+  // Not a 401: the session is fine, only the password typed was wrong, and a
+  // 401 would read to the app as having been signed out.
+  if (!ok) {
+    throw ApiError.badRequest('Current password is incorrect', { code: 'WRONG_PASSWORD' });
+  }
+  if (await user.verifyPassword(req.body.newPassword)) {
+    throw ApiError.badRequest('Choose a password different from your current one', {
+      code: 'SAME_PASSWORD',
+    });
+  }
 
   await user.setPassword(req.body.newPassword);
+  // Rounded down to the second, like a JWT's issue time, so the tokens
+  // handed back below are not already out of date.
+  user.passwordChangedAt = new Date(Math.floor(Date.now() / 1000) * 1000);
   await user.save();
 
-  res.json({ success: true, data: { message: 'Password updated' } });
+  res.json({ success: true, data: authPayload(user) });
 });
 
 /**
@@ -211,6 +350,7 @@ export const deleteAccount = asyncHandler(async (req, res) => {
     removed[key] = result.deletedCount;
   }
 
+  await EmailCode.deleteMany({ email: user.email });
   await User.deleteOne({ _id: owner });
 
   res.json({ success: true, data: { message: 'Account deleted', removed } });

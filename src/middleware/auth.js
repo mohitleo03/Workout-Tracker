@@ -2,6 +2,16 @@ import { verifyAccessToken } from '../utils/jwt.js';
 import { ApiError } from '../utils/ApiError.js';
 import { User } from '../models/User.js';
 
+/**
+ * Whether a token was signed before the account's password was last reset.
+ * JWT times are whole seconds, which is why the reset time is stored rounded
+ * down: a token signed in the same second as the reset still counts.
+ */
+export function issuedBeforePasswordReset(payload, user) {
+  if (!user.passwordChangedAt || !payload.iat) return false;
+  return payload.iat * 1000 < user.passwordChangedAt.getTime();
+}
+
 export async function requireAuth(req, _res, next) {
   try {
     const header = req.headers.authorization || '';
@@ -16,8 +26,11 @@ export async function requireAuth(req, _res, next) {
     }
 
     const user = await User.findById(payload.sub)
-      .select('_id email name role preferences isActive subscriptionExpiresAt');
+      .select('_id email name role preferences isActive subscriptionExpiresAt emailVerified passwordChangedAt');
     if (!user) throw ApiError.unauthorized('User no longer exists');
+    if (issuedBeforePasswordReset(payload, user)) {
+      throw ApiError.unauthorized('Signed out after a password reset', { code: 'PASSWORD_RESET' });
+    }
 
     req.user = user;
     req.userId = user._id;
@@ -40,6 +53,13 @@ export function requireActiveAccount(req, _res, next) {
 
   // Whoever approves accounts must not be able to be locked out of doing so.
   if (user.role === 'admin') return next();
+
+  // Only an explicit false: accounts from before sign-up codes have no value.
+  if (user.emailVerified === false) {
+    return next(
+      ApiError.forbidden('Confirm your email address first.', { code: 'EMAIL_NOT_VERIFIED' })
+    );
+  }
 
   if (!user.isActive) {
     return next(

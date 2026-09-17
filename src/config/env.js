@@ -52,6 +52,20 @@ export const env = {
     ? process.env.AUTO_ACTIVATE_USERS === 'true'
     : (process.env.NODE_ENV || 'development') !== 'production',
 
+  // Email, for sign-up verification and password reset codes.
+  mail: {
+    // 'smtp' sends for real. 'memory' keeps messages in the process, for the
+    // test scripts. 'log' prints them, for local work with no mail account -
+    // never allowed in production, where a code in the logs is a leak.
+    transport:
+      process.env.MAIL_TRANSPORT || (process.env.SMTP_USER ? 'smtp' : 'log'),
+    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    port: Number(process.env.SMTP_PORT || 465),
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+    fromName: process.env.MAIL_FROM_NAME || 'Workout Tracker',
+  },
+
   // Vercel sets VERCEL=1 in every deployment and in `vercel dev`.
   isServerless: Boolean(process.env.VERCEL),
 

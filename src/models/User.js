@@ -13,6 +13,15 @@ const userSchema = new mongoose.Schema(
       index: true,
     },
     passwordHash: { type: String, required: true, select: false },
+
+    // False until the emailed code is entered. Deliberately no default:
+    // accounts from before sign-up codes existed have no value, and count as
+    // verified - only a sign-up from now on starts out false.
+    emailVerified: { type: Boolean },
+
+    // When the password was last reset. Sessions signed in before then stop
+    // working, so a reset also locks out whoever knew the old password.
+    passwordChangedAt: { type: Date },
     name: { type: String, trim: true, default: '' },
 
     // Reserved for a future Google sign-in without a schema migration.
@@ -103,6 +112,7 @@ userSchema.methods.toPublic = function toPublic() {
     email: this.email,
     name: this.name,
     role: this.role || 'user',
+    emailVerified: this.emailVerified !== false,
     profile: this.profile,
     preferences: this.preferences,
     isActive: this.isActive,
