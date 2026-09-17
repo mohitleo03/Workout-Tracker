@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
+import { FEATURE_KEYS } from '../config/features.js';
 
 const userSchema = new mongoose.Schema(
   {
@@ -55,12 +56,20 @@ const userSchema = new mongoose.Schema(
       waterRemindersEnabled: { type: Boolean, default: false },
       weighInRemindersEnabled: { type: Boolean, default: false },
       workoutRemindersEnabled: { type: Boolean, default: false },
-      // Suggest more weight once every planned rep was hit last time. Off
-      // until chosen: an app quietly raising the bar is not everyone's wish.
-      progressiveOverloadEnabled: { type: Boolean, default: false },
-      // The jump to suggest, in the user's weight unit. Null means the
-      // app's default for that unit.
+      // The jump progressive overload suggests, in the user's weight unit.
+      // Null means the app's default for that unit.
       overloadIncrement: { type: Number, default: null },
+
+      // Which switchable features the user has turned on or off. A missing
+      // entry means "the default", so no default is declared on any of them:
+      // one here would be written into every existing account on load.
+      features: Object.fromEntries(FEATURE_KEYS.map((key) => [key, { type: Boolean }])),
+
+      // 'standard' for accounts that signed up once features were
+      // switchable: basic on, advanced off. Absent on every account from
+      // before, which keeps all of them on. Deliberately no default, for the
+      // same reason as above.
+      featureDefaults: { type: String, enum: ['all', 'standard'] },
     },
   },
   { timestamps: true }

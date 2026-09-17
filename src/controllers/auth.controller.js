@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { User } from '../models/User.js';
 import { env } from '../config/env.js';
+import { FEATURE_KEYS } from '../config/features.js';
 import { WorkoutSession } from '../models/WorkoutSession.js';
 import { Plan } from '../models/Plan.js';
 import { Goal } from '../models/Goal.js';
@@ -50,8 +51,13 @@ export const updateMeSchema = z.object({
       waterRemindersEnabled: z.boolean().optional(),
       weighInRemindersEnabled: z.boolean().optional(),
       workoutRemindersEnabled: z.boolean().optional(),
-      progressiveOverloadEnabled: z.boolean().optional(),
       overloadIncrement: z.number().positive().max(50).nullable().optional(),
+      // The whole set of switches the user has touched; a switch left out
+      // goes back to its default. featureDefaults is the server's to set.
+      features: z
+        .object(Object.fromEntries(FEATURE_KEYS.map((key) => [key, z.boolean().optional()])))
+        .strict()
+        .optional(),
       dailyWaterMl: z.number().min(0).max(20000).optional(),
       themeMode: z.enum(['system', 'dark', 'light']).nullable().optional(),
       accentColor: z
@@ -101,6 +107,9 @@ export const register = asyncHandler(async (req, res) => {
     // on a manual step would block everything, so it is opt-out by config.
     isActive: env.autoActivateUsers,
     activatedAt: env.autoActivateUsers ? new Date() : null,
+    // A new sign-up starts with the basic features on and the advanced ones
+    // off. Accounts from before this never have it, and keep everything on.
+    preferences: { featureDefaults: 'standard' },
   });
   await user.setPassword(password);
   await user.save();
