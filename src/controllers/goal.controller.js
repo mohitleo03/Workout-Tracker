@@ -90,7 +90,35 @@ export const createGoal = asyncHandler(async (req, res) => {
 export const updateGoal = asyncHandler(async (req, res) => {
   const goal = await Goal.findOne({ _id: req.params.id, owner: req.userId });
   if (!goal) throw ApiError.notFound('Goal not found');
+
+  if (req.body.targetDate && req.body.targetDate <= goal.startDate) {
+    throw ApiError.badRequest('The deadline has to be after the goal started', {
+      code: 'DEADLINE_BEFORE_START',
+    });
+  }
+
   Object.assign(goal, req.body);
+
+  if (req.body.targetValue !== undefined) {
+    // A new target can sit on the other side of where the goal started - a
+    // weight-loss goal turned into a gain - so the direction follows it.
+    goal.direction = goal.targetValue >= goal.startValue ? 'increase' : 'decrease';
+
+    // Raising the bar on a goal already reached opens it again. Reaching a
+    // lowered one is picked up by the save hook, as any checkpoint would be.
+    if (goal.status === 'achieved' && req.body.status === undefined) {
+      const current = goal.currentValue ?? goal.startValue;
+      const hit =
+        goal.direction === 'increase'
+          ? current >= goal.targetValue
+          : current <= goal.targetValue;
+      if (!hit) {
+        goal.status = 'active';
+        goal.achievedAt = null;
+      }
+    }
+  }
+
   await goal.save();
   res.json({ success: true, data: goal.toJSON() });
 });
@@ -160,7 +188,14 @@ export const syncGoals = asyncHandler(async (req, res) => {
       const latest = await BodyMetric.findOne({ owner: goal.owner, weightKg: { $ne: null } })
         .sort({ date: -1 })
         .lean();
-      value = latest?.weightKg ?? null;
+      // Weigh-ins are stored in kg. A goal set in lb has to be compared in lb,
+      // or 80 kg reads as having already beaten a 170 lb target.
+      value =
+        latest?.weightKg == null
+          ? null
+          : goal.unit === 'lb'
+            ? Math.round((latest.weightKg / 0.45359237) * 10) / 10
+            : latest.weightKg;
     } else if (goal.type === 'workout_count') {
       value = await WorkoutSession.countDocuments({
         owner: goal.owner,

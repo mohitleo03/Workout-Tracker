@@ -1,5 +1,9 @@
 import { z } from 'zod';
 import { Exercise, MUSCLE_GROUPS } from '../models/Exercise.js';
+import { ExerciseNote } from '../models/ExerciseNote.js';
+import { Goal } from '../models/Goal.js';
+import { Plan } from '../models/Plan.js';
+import { WorkoutSession } from '../models/WorkoutSession.js';
 import { ApiError } from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
@@ -106,14 +110,62 @@ export const updateExercise = asyncHandler(async (req, res) => {
   const exercise = await Exercise.findOne({ _id: req.params.id, owner: req.userId });
   if (!exercise) throw ApiError.notFound('Custom exercise not found');
 
+  const renamed = req.body.name !== undefined && req.body.name !== exercise.name;
   Object.assign(exercise, req.body);
   await exercise.save();
+
+  // Workouts and goals keep a copy of the name, which is what records and
+  // goal cards show. A rename is meant to be a rename everywhere, not only
+  // from today on. Single-field updates, so no finished workout is re-saved
+  // and its recorded duration recalculated.
+  if (renamed) {
+    await Promise.all([
+      WorkoutSession.updateMany(
+        { owner: req.userId, 'entries.exercise': exercise._id },
+        { $set: { 'entries.$[e].exerciseName': exercise.name } },
+        { arrayFilters: [{ 'e.exercise': exercise._id }] }
+      ),
+      Goal.updateMany(
+        { owner: req.userId, exercise: exercise._id },
+        { $set: { exerciseName: exercise.name } }
+      ),
+    ]);
+  }
+
   res.json({ success: true, data: exercise });
 });
 
+/**
+ * Deletes a custom exercise nobody depends on. One that is in the plan, a
+ * logged workout or a goal is refused: deleting it would leave nameless rows
+ * in all of them. Renaming is the way to fix a mistake in one of those.
+ */
 export const deleteExercise = asyncHandler(async (req, res) => {
-  const result = await Exercise.deleteOne({ _id: req.params.id, owner: req.userId });
-  if (result.deletedCount === 0) throw ApiError.notFound('Custom exercise not found');
+  const exercise = await Exercise.findOne({ _id: req.params.id, owner: req.userId });
+  if (!exercise) throw ApiError.notFound('Custom exercise not found');
+
+  const [plans, workouts, goals] = await Promise.all([
+    Plan.countDocuments({ owner: req.userId, 'days.exercises.exercise': exercise._id }),
+    WorkoutSession.countDocuments({ owner: req.userId, 'entries.exercise': exercise._id }),
+    Goal.countDocuments({ owner: req.userId, exercise: exercise._id }),
+  ]);
+
+  if (plans + workouts + goals > 0) {
+    const uses = [
+      plans > 0 && 'your plan',
+      workouts > 0 && `${workouts} workout${workouts === 1 ? '' : 's'}`,
+      goals > 0 && `${goals} goal${goals === 1 ? '' : 's'}`,
+    ].filter(Boolean);
+    throw ApiError.conflict(
+      `${exercise.name} is used in ${uses.join(' and ')}, so it can't be deleted. You can rename it instead.`,
+      { code: 'EXERCISE_IN_USE', plans, workouts, goals }
+    );
+  }
+
+  await Promise.all([
+    Exercise.deleteOne({ _id: exercise._id }),
+    ExerciseNote.deleteMany({ owner: req.userId, exercise: exercise._id }),
+  ]);
   res.json({ success: true, data: { message: 'Deleted' } });
 });
 

@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { z } from 'zod';
 import { Food } from '../models/Food.js';
 import { DietLog } from '../models/DietLog.js';
+import { DietPlan } from '../models/DietPlan.js';
 import { ApiError } from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
@@ -119,8 +120,26 @@ export const updateFood = asyncHandler(async (req, res) => {
   res.json({ success: true, data: food });
 });
 
+/**
+ * Deletes a custom food. Days already logged keep their own copy of its name
+ * and numbers, so they are unaffected - but the daily diet plan points at the
+ * food itself, and would be left with a gap. That one is refused.
+ */
 export const deleteFood = asyncHandler(async (req, res) => {
-  const result = await Food.deleteOne({ _id: req.params.id, owner: req.userId });
-  if (result.deletedCount === 0) throw ApiError.notFound('Custom food not found');
+  const food = await Food.findOne({ _id: req.params.id, owner: req.userId });
+  if (!food) throw ApiError.notFound('Custom food not found');
+
+  const inPlan = await DietPlan.countDocuments({
+    owner: req.userId,
+    'meals.items.food': food._id,
+  });
+  if (inPlan > 0) {
+    throw ApiError.conflict(
+      `${food.name} is in your daily diet plan, so it can't be deleted. Take it out of the plan first.`,
+      { code: 'FOOD_IN_PLAN' }
+    );
+  }
+
+  await Food.deleteOne({ _id: food._id });
   res.json({ success: true, data: { message: 'Deleted' } });
 });
